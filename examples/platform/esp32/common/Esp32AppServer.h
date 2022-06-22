@@ -23,4 +23,5 @@
 
 namespace Esp32AppServer {
 void Init(AppDelegate * context = nullptr);
+void SetDataProviders();
 }

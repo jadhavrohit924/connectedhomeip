@@ -61,10 +61,7 @@ extern "C" void app_main()
     ESP_LOGI(TAG, "chip-esp32-light-example starting");
     ESP_LOGI(TAG, "==================================================");
 
-#if CONFIG_ENABLE_ESP32_FACTORY_DATA_PROVIDER
-    SetCommissionableDataProvider(&sFactoryDataProvider);
-#endif // CONFIG_ENABLE_ESP32_FACTORY_DATA_PROVIDER
-
+    Esp32AppServer::SetDataProviders();
 #if CONFIG_ENABLE_CHIP_SHELL
     chip::LaunchShell();
 #endif

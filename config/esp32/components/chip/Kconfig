@@ -635,6 +635,18 @@ menu "CHIP Device Layer"
                 nvs partition. Factory partition can be configured using CONFIG_CHIP_FACTORY_NAMESPACE_PARTITION_LABEL
                 option, default is "nvs".
 
+	config ENABLE_ESP32_COMMISSIONABLE_DATA_PROVIDER
+	    bool "Use Only ESP32 Commissionable Data Provider"
+	    default n
+	    help
+		If this optio is enabled, then ESP32 implementation of CommissionableDataProvider is used.
+
+	config ENABLE_ESP32_DAC_PROVIDER
+	    bool "Use Only ESP32 Device Attestation Credentials Provider"
+	    default n
+	    help
+		If this optio is enabled, then ESP32 implementation of DeviceAttestationCredentials is used.
+
     endmenu
 
 
