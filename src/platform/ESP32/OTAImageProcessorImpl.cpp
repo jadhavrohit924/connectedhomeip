@@ -19,6 +19,7 @@
 #include <app/clusters/ota-requestor/OTARequestorInterface.h>
 #include <platform/CHIPDeviceEvent.h>
 #include <platform/ESP32/ESP32Utils.h>
+#include <platform/ESP32/DeviceOTAHandler.h>
 
 #include "OTAImageProcessorImpl.h"
 #include "esp_app_format.h"
@@ -48,6 +49,9 @@ using namespace ::chip::DeviceLayer::Internal;
 
 namespace chip {
 namespace {
+
+bool gOTAStarted = false;
+constexpr uint32_t DUMMY_DEVICE_ID = 1;
 
 void HandleRestart(Layer * systemLayer, void * appState)
 {
@@ -448,6 +452,18 @@ void OTAImageProcessorImpl::HandleFinalize(intptr_t context)
 
     imageProcessor->ReleaseBlock();
     PostOTAStateChangeEvent(otaState);
+
+    // Notify the dummy device that OTA is complete
+    if (gOTAStarted)
+    {
+        DeviceOTAHandler* handler = OTAManager::GetInstance().GetOTAHandler(DUMMY_DEVICE_ID);
+        if (handler != nullptr)
+        {
+            handler->OnOTAComplete();
+            gOTAStarted = false; // Reset for next OTA
+            ESP_LOGI(TAG, "Notified device %" PRIu32 " of OTA completion", DUMMY_DEVICE_ID);
+        }
+    }
 }
 
 void OTAImageProcessorImpl::HandleAbort(intptr_t context)
@@ -542,7 +558,44 @@ void OTAImageProcessorImpl::HandleProcessBlock(intptr_t context)
 #elif defined(CONFIG_AUTO_UPDATE_RCP) && defined(CONFIG_OPENTHREAD_BORDER_ROUTER)
     err                                    = imageProcessor->ProcessRcpImage(blockToWrite.data(), blockToWrite.size());
 #else
-    err           = esp_ota_write(imageProcessor->mOTAUpdateHandle, blockToWrite.data(), blockToWrite.size());
+    // Get the dummy device handler
+    DeviceOTAHandler* handler = OTAManager::GetInstance().GetOTAHandler(DUMMY_DEVICE_ID);
+    if (handler != nullptr)
+    {
+        // For the first block, notify the device that OTA is available
+        if (!gOTAStarted)
+        {
+            OTADeviceEntry entry;
+            entry.identifier = DUMMY_DEVICE_ID;
+            entry.offset = 0;
+            entry.size = 0; // We don't know the size yet
+            
+            handler->NotifyOTAAvailable(entry);
+            gOTAStarted = true;
+            ESP_LOGI(TAG, "Notified device %" PRIu32 " of OTA availability", DUMMY_DEVICE_ID);
+        }
+        
+        // Forward the block to the device handler instead of writing to flash
+        ESP_LOGI(TAG, "Forwarding OTA block (%zu bytes) to device %" PRIu32, blockToWrite.size(), DUMMY_DEVICE_ID);
+        bool success = handler->ProcessBlock(blockToWrite);
+        
+        if (success)
+        {
+            // Send ACK for the block
+            handler->SendBlockAck(blockToWrite);
+            err = ESP_OK;
+        }
+        else
+        {
+            ESP_LOGE(TAG, "Failed to process block on device %" PRIu32, DUMMY_DEVICE_ID);
+            err = ESP_FAIL;
+        }
+    }
+    else
+    {
+        ESP_LOGW(TAG, "No handler found for device ID %" PRIu32 ", falling back to normal OTA", DUMMY_DEVICE_ID);
+        err = esp_ota_write(imageProcessor->mOTAUpdateHandle, blockToWrite.data(), blockToWrite.size());
+    }
 #endif // CONFIG_ENABLE_DELTA_OTA
 
 #ifdef CONFIG_ENABLE_ENCRYPTED_OTA

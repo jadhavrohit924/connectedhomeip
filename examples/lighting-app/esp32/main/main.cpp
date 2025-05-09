@@ -38,6 +38,11 @@
 #include <credentials/examples/DeviceAttestationCredsExample.h>
 #include <platform/ESP32/ESP32Utils.h>
 #include <setup_payload/OnboardingCodesUtil.h>
+#include <inttypes.h>
+
+// Custom OTA implementation
+#include <platform/ESP32/DeviceOTAHandler.h>
+#include "DummyDeviceOTAHandler.h"
 
 #if CONFIG_ENABLE_ESP_INSIGHTS_SYSTEM_STATS
 #include <tracing/esp32_trace/insights_sys_stats.h>
@@ -84,6 +89,9 @@ static const char TAG[] = "light-app";
 
 static AppDeviceCallbacks EchoCallbacks;
 static AppDeviceCallbacksDelegate sAppDeviceCallbacksDelegate;
+
+// Global OTA handler for testing
+static chip::DummyDeviceOTAHandler * gDummyOTAHandler = nullptr;
 
 namespace {
 #if CONFIG_ENABLE_ESP32_FACTORY_DATA_PROVIDER
@@ -132,6 +140,16 @@ static void InitServer(intptr_t context)
 
     DeviceCallbacksDelegate::Instance().SetAppDelegate(&sAppDeviceCallbacksDelegate);
     Esp32AppServer::Init(); // Init ZCL Data Model and CHIP App Server AND Initialize device attestation config
+    
+    // Initialize our dummy OTA handler for testing
+    if (gDummyOTAHandler == nullptr)
+    {
+        // Use device ID 1 for the dummy device
+        uint32_t dummyDeviceId = 1;
+        gDummyOTAHandler = new chip::DummyDeviceOTAHandler(dummyDeviceId);
+        chip::OTAManager::GetInstance().RegisterOTAHandler(dummyDeviceId, gDummyOTAHandler);
+        ESP_LOGI(TAG, "Registered dummy OTA handler for device ID %" PRIu32, dummyDeviceId);
+    }
 
 #if CONFIG_ENABLE_ESP_INSIGHTS_TRACE
     esp_insights_config_t config = {
@@ -217,5 +235,21 @@ extern "C" void app_main()
     if (error != CHIP_NO_ERROR)
     {
         ESP_LOGE(TAG, "GetAppTask().StartAppTask() failed : %s", ErrorStr(error));
+    }
+}
+
+void ApplicationShutdown()
+{
+    ESP_LOGI(TAG, "Lighting App: ApplicationShutdown()");
+    
+    // Clean up the dummy OTA handler
+    if (gDummyOTAHandler != nullptr)
+    {
+        // Use the same device ID as in InitServer
+        uint32_t dummyDeviceId = 1;
+        chip::OTAManager::GetInstance().UnregisterOTAHandler(dummyDeviceId);
+        delete gDummyOTAHandler;
+        gDummyOTAHandler = nullptr;
+        ESP_LOGI(TAG, "Unregistered dummy OTA handler for device ID %" PRIu32, dummyDeviceId);
     }
 }

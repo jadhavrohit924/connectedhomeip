@@ -98,6 +98,8 @@ static_library("ESP32") {
     sources += [
       "OTAImageProcessorImpl.cpp",
       "OTAImageProcessorImpl.h",
+      "DeviceOTAHandler.cpp",
+      "DeviceOTAHandler.h",
     ]
   }
 
