@@ -76,13 +76,7 @@ bool DummyDeviceOTAHandler::ProcessBlock(ByteSpan & block)
         return false;
     }
     
-    return true;
-}
-
-bool DummyDeviceOTAHandler::SendBlockAck(ByteSpan & block)
-{
-    ESP_LOGI(TAG, "[%" PRIu32 "] Sending ACK for block #%" PRIu32 " (%zu bytes)", 
-        mDeviceId, mBlocksProcessed, block.size());
+    ESP_LOGI(TAG, "[%" PRIu32 "] Block #%" PRIu32 " successfully processed", mDeviceId, mBlocksProcessed);
     return true;
 }
 

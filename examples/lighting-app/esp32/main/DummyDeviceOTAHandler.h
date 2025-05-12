@@ -35,7 +35,6 @@ public:
     ~DummyDeviceOTAHandler() override = default;
 
     bool ProcessBlock(ByteSpan & block) override;
-    bool SendBlockAck(ByteSpan & block) override;
     bool NotifyOTAAvailable(const OTADeviceEntry & deviceEntry) override;
     bool OnOTAComplete() override;
 

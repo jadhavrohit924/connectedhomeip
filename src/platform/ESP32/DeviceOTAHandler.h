@@ -51,13 +51,6 @@ public:
     virtual bool ProcessBlock(ByteSpan & block) = 0;
 
     /**
-     * @brief Send an ACK for a processed block
-     * @param block The block that was processed
-     * @return true if ACK was sent successfully, false otherwise
-     */
-    virtual bool SendBlockAck(ByteSpan & block) = 0;
-
-    /**
      * @brief Notify the device that an OTA is available
      * @param deviceEntry Information about the OTA
      * @return true if the device accepted the OTA, false otherwise

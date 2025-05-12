@@ -581,8 +581,6 @@ void OTAImageProcessorImpl::HandleProcessBlock(intptr_t context)
         
         if (success)
         {
-            // Send ACK for the block
-            handler->SendBlockAck(blockToWrite);
             err = ESP_OK;
         }
         else
