@@ -58,6 +58,8 @@
 #endif // CONFIG_ENABLE_ESP32_DEVICE_INFO_PROVIDER
 
 namespace {
+static const uint16_t kSceneTableSize = 16;
+
 #if CONFIG_ENABLE_ESP32_FACTORY_DATA_PROVIDER
 chip::DeviceLayer::ESP32FactoryDataProvider sFactoryDataProvider;
 #endif // CONFIG_ENABLE_ESP32_FACTORY_DATA_PROVIDER
@@ -105,19 +107,52 @@ static size_t gBridgedDeviceCount = 0;
 // (taken from chip-devices.xml)
 #define DEVICE_TYPE_BRIDGE 0x000e
 
+#define DEVICE_TYPE_DIMMABLE_LIGHT 0x0101
+#define DEVICE_TYPE_EXTENDED_COLOR_LIGHT 0x010D
+#define DEVICE_TYPE_COLOR_TEMPERATURE_LIGHT 0x010C
+#define DEVICE_TYPE_FAN 0x002B
+#define DEVICE_TYPE_WINDOW_COVERING 0x0202
+#define DEVICE_TYPE_THERMOSTAT 0x0301
 // Device Version for dynamic endpoints:
 #define DEVICE_VERSION_DEFAULT 1
 
+namespace {
 /* BRIDGED DEVICE ENDPOINT: contains the following clusters:
    - On/Off
    - Descriptor
    - Bridged Device Basic Information
 */
 
+/* REVISION definitions:
+ */
+
+ #define ZCL_DESCRIPTOR_CLUSTER_REVISION (1u)
+ #define ZCL_BRIDGED_DEVICE_BASIC_INFORMATION_CLUSTER_REVISION (2u)
+ #define ZCL_GROUPS_CLUSTER_REVISION (4u)
+ #define ZCL_SCENES_MANAGEMENT_CLUSTER_REVISION (1u)
+ #define ZCL_IDENTIFY_CLUSTER_REVISION (6u)
+ #define ZCL_FIXED_LABEL_CLUSTER_REVISION (1u)
+ #define ZCL_ON_OFF_CLUSTER_REVISION (4u)
+ #define ZCL_LEVEL_CONTROL_CLUSTER_REVISION (7u)
+ #define ZCL_COLOR_CONTROL_CLUSTER_REVISION (9u)
+ #define ZCL_FAN_CONTROL_CLUSTER_REVISION (6u)
+ #define ZCL_WINDOW_COVERING_CLUSTER_REVISION (8u)
+ #define ZCL_THERMOSTAT_CLUSTER_REVISION (10u)
 // Declare On/Off cluster attributes
 DECLARE_DYNAMIC_ATTRIBUTE_LIST_BEGIN(onOffAttrs)
 DECLARE_DYNAMIC_ATTRIBUTE(OnOff::Attributes::OnOff::Id, BOOLEAN, 1, 0), /* on/off */
     DECLARE_DYNAMIC_ATTRIBUTE_LIST_END();
+// TODO: It's not clear whether it would be better to get the command lists from
+// the ZAP config on our last fixed endpoint instead.
+constexpr CommandId onOffIncomingCommands[] = {
+    app::Clusters::OnOff::Commands::Off::Id,
+    app::Clusters::OnOff::Commands::On::Id,
+    app::Clusters::OnOff::Commands::Toggle::Id,
+    app::Clusters::OnOff::Commands::OffWithEffect::Id,
+    app::Clusters::OnOff::Commands::OnWithRecallGlobalScene::Id,
+    app::Clusters::OnOff::Commands::OnWithTimedOff::Id,
+    kInvalidCommandId,
+};
 
 // Declare Descriptor cluster attributes
 DECLARE_DYNAMIC_ATTRIBUTE_LIST_BEGIN(descriptorAttrs)
@@ -133,35 +168,269 @@ DECLARE_DYNAMIC_ATTRIBUTE(BridgedDeviceBasicInformation::Attributes::NodeLabel::
     DECLARE_DYNAMIC_ATTRIBUTE(BridgedDeviceBasicInformation::Attributes::Reachable::Id, BOOLEAN, 1, 0),              /* Reachable */
     DECLARE_DYNAMIC_ATTRIBUTE_LIST_END();
 
-// Declare Cluster List for Bridged Light endpoint
-// TODO: It's not clear whether it would be better to get the command lists from
-// the ZAP config on our last fixed endpoint instead.
-constexpr CommandId onOffIncomingCommands[] = {
-    app::Clusters::OnOff::Commands::Off::Id,
-    app::Clusters::OnOff::Commands::On::Id,
-    app::Clusters::OnOff::Commands::Toggle::Id,
-    app::Clusters::OnOff::Commands::OffWithEffect::Id,
-    app::Clusters::OnOff::Commands::OnWithRecallGlobalScene::Id,
-    app::Clusters::OnOff::Commands::OnWithTimedOff::Id,
+// Declare Groups cluster attributes
+DECLARE_DYNAMIC_ATTRIBUTE_LIST_BEGIN(groupsAttrs)
+DECLARE_DYNAMIC_ATTRIBUTE(Groups::Attributes::NameSupport::Id, BITMAP8, 1, 0), /* NameSupport */
+DECLARE_DYNAMIC_ATTRIBUTE_LIST_END();
+
+constexpr CommandId groupsIncomingCommands[] = {
+    app::Clusters::Groups::Commands::AddGroup::Id,
+    app::Clusters::Groups::Commands::RemoveGroup::Id,
+    app::Clusters::Groups::Commands::RemoveAllGroups::Id,
+    app::Clusters::Groups::Commands::GetGroupMembership::Id,
+    app::Clusters::Groups::Commands::ViewGroup::Id,
     kInvalidCommandId,
 };
 
+constexpr CommandId groupsOutgoingCommands[] = {
+    app::Clusters::Groups::Commands::AddGroupResponse::Id,
+    app::Clusters::Groups::Commands::RemoveGroupResponse::Id,
+    app::Clusters::Groups::Commands::GetGroupMembershipResponse::Id,
+    app::Clusters::Groups::Commands::ViewGroupResponse::Id,
+    kInvalidCommandId,
+};
+
+// Declare Scenes cluster attributes
+DECLARE_DYNAMIC_ATTRIBUTE_LIST_BEGIN(scenesAttrs)
+    DECLARE_DYNAMIC_ATTRIBUTE(ScenesManagement::Attributes::SceneTableSize::Id, INT16U, sizeof(kSceneTableSize), kSceneTableSize), /* SceneTableSize */
+    DECLARE_DYNAMIC_ATTRIBUTE(ScenesManagement::Attributes::FabricSceneInfo::Id, ARRAY, CHIP_CONFIG_MAX_FABRICS*sizeof(ScenesManagement::Structs::SceneInfoStruct::Type), CHIP_CONFIG_MAX_FABRICS), /* FabricSceneInfo */
+DECLARE_DYNAMIC_ATTRIBUTE_LIST_END();
+
+constexpr CommandId scenesIncomingCommands[] = {
+    app::Clusters::ScenesManagement::Commands::AddScene::Id,
+    app::Clusters::ScenesManagement::Commands::ViewScene::Id,
+    app::Clusters::ScenesManagement::Commands::RemoveScene::Id,
+    app::Clusters::ScenesManagement::Commands::RemoveAllScenes::Id,
+    app::Clusters::ScenesManagement::Commands::StoreScene::Id,
+    app::Clusters::ScenesManagement::Commands::RecallScene::Id,
+    app::Clusters::ScenesManagement::Commands::GetSceneMembership::Id,
+    kInvalidCommandId,
+};
+
+constexpr CommandId scenesOutgoingCommands[] = {
+    app::Clusters::ScenesManagement::Commands::AddSceneResponse::Id,
+    app::Clusters::ScenesManagement::Commands::ViewSceneResponse::Id,
+    app::Clusters::ScenesManagement::Commands::RemoveSceneResponse::Id,
+    app::Clusters::ScenesManagement::Commands::RemoveAllScenesResponse::Id,
+    app::Clusters::ScenesManagement::Commands::StoreSceneResponse::Id,
+    app::Clusters::ScenesManagement::Commands::GetSceneMembershipResponse::Id,
+    kInvalidCommandId,
+};
+
+// Declare Identify cluster attributes
+DECLARE_DYNAMIC_ATTRIBUTE_LIST_BEGIN(identifyAttrs)
+DECLARE_DYNAMIC_ATTRIBUTE(Identify::Attributes::IdentifyTime::Id, INT16U, 1, 0), /* IdentifyTime */
+    DECLARE_DYNAMIC_ATTRIBUTE(Identify::Attributes::IdentifyType::Id, INT8U, 1, 0), /* IdentifyType */
+    DECLARE_DYNAMIC_ATTRIBUTE_LIST_END();
+
+constexpr CommandId identifyIncomingCommands[] = {
+    app::Clusters::Identify::Commands::Identify::Id,
+    kInvalidCommandId,
+};
+
+// Declare Level Control cluster attributes
+DECLARE_DYNAMIC_ATTRIBUTE_LIST_BEGIN(levelControlAttrs)
+DECLARE_DYNAMIC_ATTRIBUTE(LevelControl::Attributes::CurrentLevel::Id, INT8U, 1, 0), /* CurrentLevel */
+    DECLARE_DYNAMIC_ATTRIBUTE(LevelControl::Attributes::OnLevel::Id, INT8U, 1, 0), /* OnLevel */
+    DECLARE_DYNAMIC_ATTRIBUTE(LevelControl::Attributes::MinLevel::Id, INT8U, 1, 0), /* MinLevel */
+    DECLARE_DYNAMIC_ATTRIBUTE(LevelControl::Attributes::MaxLevel::Id, INT8U, 1, 254), /* MaxLevel */
+    DECLARE_DYNAMIC_ATTRIBUTE_LIST_END();
+
+constexpr CommandId levelControlIncomingCommands[] = {
+    app::Clusters::LevelControl::Commands::MoveToLevel::Id,
+    app::Clusters::LevelControl::Commands::Move::Id,
+    app::Clusters::LevelControl::Commands::Step::Id,
+    app::Clusters::LevelControl::Commands::Stop::Id,
+    app::Clusters::LevelControl::Commands::MoveToLevelWithOnOff::Id,
+    app::Clusters::LevelControl::Commands::MoveWithOnOff::Id,
+    app::Clusters::LevelControl::Commands::StepWithOnOff::Id,
+    app::Clusters::LevelControl::Commands::StopWithOnOff::Id,
+    kInvalidCommandId,
+};
+
+// Declare Color Control cluster attributes
+DECLARE_DYNAMIC_ATTRIBUTE_LIST_BEGIN(colorControlAttrs)
+DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::ColorMode::Id, INT8U, 1, 0), /* ColorMode */
+    DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::Options::Id, BITMAP8, 1, 0), /* Options */
+    DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::NumberOfPrimaries::Id, INT8U, 1, 0), /* NumberOfPrimaries */
+    DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::EnhancedColorMode::Id, INT8U, 1, 0), /* EnhancedColorMode */
+    DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::ColorCapabilities::Id, BITMAP8, 1, 0), /* ColorCapabilities */
+    DECLARE_DYNAMIC_ATTRIBUTE_LIST_END();
+
+// Define you accepted commands for the Color Control cluster
+constexpr CommandId colorControlIncomingCommands[] = {
+    kInvalidCommandId,
+};
+
+// Declare Color Control with Color Temperature cluster attributes
+DECLARE_DYNAMIC_ATTRIBUTE_LIST_BEGIN(colorControlWithColorTemperatureAttrs)
+DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::ColorMode::Id, INT8U, 1, 0), /* ColorMode */
+    DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::Options::Id, BITMAP8, 1, 0), /* Options */
+    DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::NumberOfPrimaries::Id, INT8U, 1, 0), /* NumberOfPrimaries */
+    DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::EnhancedColorMode::Id, INT8U, 1, 0), /* EnhancedColorMode */
+    DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::ColorCapabilities::Id, BITMAP8, 1, 0), /* ColorCapabilities */
+    DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::FeatureMap::Id, BITMAP32, 4, 16), /* FeatureMap */
+    DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::ColorTemperatureMireds::Id, INT16U, 2, 0), /* ColorTemperatureMireds */
+    DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::ColorTempPhysicalMinMireds::Id, INT16U, 2, 0), /* ColorTempPhysicalMinMireds */
+    DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::ColorTempPhysicalMaxMireds::Id, INT16U, 2, 0), /* ColorTempPhysicalMaxMireds */
+    DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::CoupleColorTempToLevelMinMireds::Id, INT16U, 2, 0), /* CoupleColorTempToLevelMinMireds */
+    DECLARE_DYNAMIC_ATTRIBUTE(ColorControl::Attributes::StartUpColorTemperatureMireds::Id, INT16U, 2, 0), /* StartUpColorTemperatureMireds */
+    DECLARE_DYNAMIC_ATTRIBUTE_LIST_END();
+
+// Define you accepted commands for the Color Control cluster
+constexpr CommandId colorControlWithColorTemperatureIncomingCommands[] = {
+    app::Clusters::ColorControl::Commands::MoveToColorTemperature::Id,
+    app::Clusters::ColorControl::Commands::MoveColorTemperature::Id,
+    app::Clusters::ColorControl::Commands::StepColorTemperature::Id,
+    app::Clusters::ColorControl::Commands::StopMoveStep::Id,
+    kInvalidCommandId,
+};
+
+
+// Declare Fan Control cluster attributes
+DECLARE_DYNAMIC_ATTRIBUTE_LIST_BEGIN(fanControlAttrs)
+DECLARE_DYNAMIC_ATTRIBUTE(FanControl::Attributes::FanMode::Id, INT8U, 1, 0), /* FanMode */
+    DECLARE_DYNAMIC_ATTRIBUTE(FanControl::Attributes::FanModeSequence::Id, INT8U, 1, 0), /* FanModeSequence */
+    DECLARE_DYNAMIC_ATTRIBUTE(FanControl::Attributes::PercentSetting::Id, INT8U, 1, 0), /* PercentSetting */
+    DECLARE_DYNAMIC_ATTRIBUTE(FanControl::Attributes::PercentCurrent::Id, INT8U, 1, 0), /* PercentCurrent */
+    DECLARE_DYNAMIC_ATTRIBUTE_LIST_END();
+
+// Define you accepted commands for the Fan Control cluster
+constexpr CommandId fanControlIncomingCommands[] = {
+    kInvalidCommandId,
+};
+
+// Declare Window Covering cluster attributes
+DECLARE_DYNAMIC_ATTRIBUTE_LIST_BEGIN(windowCoveringAttrs)
+DECLARE_DYNAMIC_ATTRIBUTE(WindowCovering::Attributes::Type::Id, INT8U, 1, 0), /* Type */
+    DECLARE_DYNAMIC_ATTRIBUTE(WindowCovering::Attributes::ConfigStatus::Id, BITMAP8, 1, 0), /* ConfigStatus */
+    DECLARE_DYNAMIC_ATTRIBUTE(WindowCovering::Attributes::EndProductType::Id, INT8U, 1, 0), /* EndProductType */
+    DECLARE_DYNAMIC_ATTRIBUTE(WindowCovering::Attributes::Mode::Id, BITMAP8, 1, 0), /* Mode */
+    DECLARE_DYNAMIC_ATTRIBUTE_LIST_END();
+
+// Define you accepted commands for the Window Covering cluster
+constexpr CommandId windowCoveringIncomingCommands[] = {
+    app::Clusters::WindowCovering::Commands::UpOrOpen::Id,
+    app::Clusters::WindowCovering::Commands::DownOrClose::Id,
+    app::Clusters::WindowCovering::Commands::StopMotion::Id,
+    kInvalidCommandId,
+};
+
+// Declare Thermostat cluster attributes
+DECLARE_DYNAMIC_ATTRIBUTE_LIST_BEGIN(thermostatAttrs)
+DECLARE_DYNAMIC_ATTRIBUTE(Thermostat::Attributes::LocalTemperature::Id, INT16U, 2, 0), /* LocalTemperature */
+    DECLARE_DYNAMIC_ATTRIBUTE(Thermostat::Attributes::ControlSequenceOfOperation::Id, INT8U, 1, 0), /* ControlSequenceOfOperation */
+    DECLARE_DYNAMIC_ATTRIBUTE(Thermostat::Attributes::SystemMode::Id, INT8U, 1, 0), /* SystemMode */
+    DECLARE_DYNAMIC_ATTRIBUTE_LIST_END();
+
+// Define you accepted commands for the Thermostat cluster
+constexpr CommandId thermostatIncomingCommands[] = {
+    app::Clusters::Thermostat::Commands::SetpointRaiseLower::Id,
+    kInvalidCommandId,
+};
+
+// Declare Cluster List for Bridged Light endpoint
 DECLARE_DYNAMIC_CLUSTER_LIST_BEGIN(bridgedLightClusters)
 DECLARE_DYNAMIC_CLUSTER(OnOff::Id, onOffAttrs, ZAP_CLUSTER_MASK(SERVER), onOffIncomingCommands, nullptr),
     DECLARE_DYNAMIC_CLUSTER(Descriptor::Id, descriptorAttrs, ZAP_CLUSTER_MASK(SERVER), nullptr, nullptr),
+    DECLARE_DYNAMIC_CLUSTER(Identify::Id, identifyAttrs, ZAP_CLUSTER_MASK(SERVER), identifyIncomingCommands, nullptr),
     DECLARE_DYNAMIC_CLUSTER(BridgedDeviceBasicInformation::Id, bridgedDeviceBasicAttrs, ZAP_CLUSTER_MASK(SERVER), nullptr,
-                            nullptr) DECLARE_DYNAMIC_CLUSTER_LIST_END;
+                            nullptr),
+    DECLARE_DYNAMIC_CLUSTER(Groups::Id, groupsAttrs, ZAP_CLUSTER_MASK(SERVER), groupsIncomingCommands, groupsOutgoingCommands),
+    DECLARE_DYNAMIC_CLUSTER(ScenesManagement::Id, scenesAttrs, ZAP_CLUSTER_MASK(SERVER), scenesIncomingCommands, scenesOutgoingCommands),
+    DECLARE_DYNAMIC_CLUSTER_LIST_END;
 
 // Declare Bridged Light endpoint
 DECLARE_DYNAMIC_ENDPOINT(bridgedLightEndpoint, bridgedLightClusters);
 
-/* REVISION definitions:
- */
+// Declare Cluster List for Bridged Dimmable Light endpoint
+DECLARE_DYNAMIC_CLUSTER_LIST_BEGIN(bridgedDimmableLightClusters)
+DECLARE_DYNAMIC_CLUSTER(OnOff::Id, onOffAttrs, ZAP_CLUSTER_MASK(SERVER), onOffIncomingCommands, nullptr),
+    DECLARE_DYNAMIC_CLUSTER(Descriptor::Id, descriptorAttrs, ZAP_CLUSTER_MASK(SERVER), nullptr, nullptr),
+    DECLARE_DYNAMIC_CLUSTER(Identify::Id, identifyAttrs, ZAP_CLUSTER_MASK(SERVER), identifyIncomingCommands, nullptr),
+    DECLARE_DYNAMIC_CLUSTER(BridgedDeviceBasicInformation::Id, bridgedDeviceBasicAttrs, ZAP_CLUSTER_MASK(SERVER), nullptr,
+                            nullptr),
+    DECLARE_DYNAMIC_CLUSTER(Groups::Id, groupsAttrs, ZAP_CLUSTER_MASK(SERVER), groupsIncomingCommands, groupsOutgoingCommands),
+    DECLARE_DYNAMIC_CLUSTER(ScenesManagement::Id, scenesAttrs, ZAP_CLUSTER_MASK(SERVER), scenesIncomingCommands, scenesOutgoingCommands),
+    DECLARE_DYNAMIC_CLUSTER(LevelControl::Id, levelControlAttrs, ZAP_CLUSTER_MASK(SERVER), levelControlIncomingCommands, nullptr),
+    DECLARE_DYNAMIC_CLUSTER_LIST_END;
 
-#define ZCL_DESCRIPTOR_CLUSTER_REVISION (1u)
-#define ZCL_BRIDGED_DEVICE_BASIC_INFORMATION_CLUSTER_REVISION (2u)
-#define ZCL_FIXED_LABEL_CLUSTER_REVISION (1u)
-#define ZCL_ON_OFF_CLUSTER_REVISION (4u)
+// Declare Bridged Dimmable Light endpoint
+DECLARE_DYNAMIC_ENDPOINT(bridgedDimmableLightEndpoint, bridgedDimmableLightClusters);
+
+// Declare Cluster List for Bridged Extended Color Light endpoint
+DECLARE_DYNAMIC_CLUSTER_LIST_BEGIN(bridgedExtendedColorLightClusters)
+DECLARE_DYNAMIC_CLUSTER(OnOff::Id, onOffAttrs, ZAP_CLUSTER_MASK(SERVER), onOffIncomingCommands, nullptr),
+    DECLARE_DYNAMIC_CLUSTER(Descriptor::Id, descriptorAttrs, ZAP_CLUSTER_MASK(SERVER), nullptr, nullptr),
+    DECLARE_DYNAMIC_CLUSTER(Identify::Id, identifyAttrs, ZAP_CLUSTER_MASK(SERVER), identifyIncomingCommands, nullptr),
+    DECLARE_DYNAMIC_CLUSTER(BridgedDeviceBasicInformation::Id, bridgedDeviceBasicAttrs, ZAP_CLUSTER_MASK(SERVER), nullptr,
+                            nullptr),
+    DECLARE_DYNAMIC_CLUSTER(Groups::Id, groupsAttrs, ZAP_CLUSTER_MASK(SERVER), groupsIncomingCommands, groupsOutgoingCommands),
+    DECLARE_DYNAMIC_CLUSTER(ScenesManagement::Id, scenesAttrs, ZAP_CLUSTER_MASK(SERVER), scenesIncomingCommands, scenesOutgoingCommands),
+    DECLARE_DYNAMIC_CLUSTER(LevelControl::Id, levelControlAttrs, ZAP_CLUSTER_MASK(SERVER), levelControlIncomingCommands, nullptr),
+    DECLARE_DYNAMIC_CLUSTER(ColorControl::Id, colorControlAttrs, ZAP_CLUSTER_MASK(SERVER), colorControlIncomingCommands, nullptr),
+    DECLARE_DYNAMIC_CLUSTER_LIST_END;
+
+// Declare Bridged Extended Color Light endpoint
+DECLARE_DYNAMIC_ENDPOINT(bridgedExtendedColorLightEndpoint, bridgedExtendedColorLightClusters);
+
+// Declare Cluster List for Bridged Color Temperature Light endpoint
+DECLARE_DYNAMIC_CLUSTER_LIST_BEGIN(bridgedColorTemperatureLightClusters)
+DECLARE_DYNAMIC_CLUSTER(OnOff::Id, onOffAttrs, ZAP_CLUSTER_MASK(SERVER), onOffIncomingCommands, nullptr),
+    DECLARE_DYNAMIC_CLUSTER(Descriptor::Id, descriptorAttrs, ZAP_CLUSTER_MASK(SERVER), nullptr, nullptr),
+    DECLARE_DYNAMIC_CLUSTER(Identify::Id, identifyAttrs, ZAP_CLUSTER_MASK(SERVER), identifyIncomingCommands, nullptr),
+    DECLARE_DYNAMIC_CLUSTER(BridgedDeviceBasicInformation::Id, bridgedDeviceBasicAttrs, ZAP_CLUSTER_MASK(SERVER), nullptr,
+                            nullptr),
+    DECLARE_DYNAMIC_CLUSTER(Groups::Id, groupsAttrs, ZAP_CLUSTER_MASK(SERVER), groupsIncomingCommands, groupsOutgoingCommands),
+    DECLARE_DYNAMIC_CLUSTER(ScenesManagement::Id, scenesAttrs, ZAP_CLUSTER_MASK(SERVER), scenesIncomingCommands, scenesOutgoingCommands),
+    DECLARE_DYNAMIC_CLUSTER(LevelControl::Id, levelControlAttrs, ZAP_CLUSTER_MASK(SERVER), levelControlIncomingCommands, nullptr),
+    DECLARE_DYNAMIC_CLUSTER(ColorControl::Id, colorControlWithColorTemperatureAttrs, ZAP_CLUSTER_MASK(SERVER), colorControlWithColorTemperatureIncomingCommands, nullptr),
+    DECLARE_DYNAMIC_CLUSTER_LIST_END;
+
+// Declare Bridged Color Temperature Light endpoint
+DECLARE_DYNAMIC_ENDPOINT(bridgedColorTemperatureLightEndpoint, bridgedColorTemperatureLightClusters);
+
+// Declare Cluster List for Bridged Fan endpoint
+DECLARE_DYNAMIC_CLUSTER_LIST_BEGIN(bridgedFanClusters)
+DECLARE_DYNAMIC_CLUSTER(OnOff::Id, onOffAttrs, ZAP_CLUSTER_MASK(SERVER), onOffIncomingCommands, nullptr),
+    DECLARE_DYNAMIC_CLUSTER(Descriptor::Id, descriptorAttrs, ZAP_CLUSTER_MASK(SERVER), nullptr, nullptr),
+    DECLARE_DYNAMIC_CLUSTER(Identify::Id, identifyAttrs, ZAP_CLUSTER_MASK(SERVER), identifyIncomingCommands, nullptr),
+    DECLARE_DYNAMIC_CLUSTER(BridgedDeviceBasicInformation::Id, bridgedDeviceBasicAttrs, ZAP_CLUSTER_MASK(SERVER), nullptr,
+                            nullptr),
+    DECLARE_DYNAMIC_CLUSTER(Groups::Id, groupsAttrs, ZAP_CLUSTER_MASK(SERVER), groupsIncomingCommands, groupsOutgoingCommands),
+    DECLARE_DYNAMIC_CLUSTER(FanControl::Id, fanControlAttrs, ZAP_CLUSTER_MASK(SERVER), fanControlIncomingCommands, nullptr),
+    DECLARE_DYNAMIC_CLUSTER_LIST_END;
+
+// Declare Bridged Fan endpoint
+DECLARE_DYNAMIC_ENDPOINT(bridgedFanEndpoint, bridgedFanClusters);
+
+// Declare Cluster List for Bridged Window Covering endpoint
+DECLARE_DYNAMIC_CLUSTER_LIST_BEGIN(bridgedWindowCoveringClusters)
+    DECLARE_DYNAMIC_CLUSTER(Descriptor::Id, descriptorAttrs, ZAP_CLUSTER_MASK(SERVER), nullptr, nullptr),
+    DECLARE_DYNAMIC_CLUSTER(Identify::Id, identifyAttrs, ZAP_CLUSTER_MASK(SERVER), identifyIncomingCommands, nullptr),
+    DECLARE_DYNAMIC_CLUSTER(BridgedDeviceBasicInformation::Id, bridgedDeviceBasicAttrs, ZAP_CLUSTER_MASK(SERVER), nullptr,
+                            nullptr),
+    DECLARE_DYNAMIC_CLUSTER(Groups::Id, groupsAttrs, ZAP_CLUSTER_MASK(SERVER), groupsIncomingCommands, groupsOutgoingCommands),
+    DECLARE_DYNAMIC_CLUSTER(WindowCovering::Id, windowCoveringAttrs, ZAP_CLUSTER_MASK(SERVER), windowCoveringIncomingCommands, nullptr),
+    DECLARE_DYNAMIC_CLUSTER_LIST_END;
+
+// Declare Bridged Window Covering endpoint
+DECLARE_DYNAMIC_ENDPOINT(bridgedWindowCoveringEndpoint, bridgedWindowCoveringClusters);
+
+// Declare Cluster List for Bridged Thermostat endpoint
+DECLARE_DYNAMIC_CLUSTER_LIST_BEGIN(bridgedThermostatClusters)
+    DECLARE_DYNAMIC_CLUSTER(Descriptor::Id, descriptorAttrs, ZAP_CLUSTER_MASK(SERVER), nullptr, nullptr),
+    DECLARE_DYNAMIC_CLUSTER(Identify::Id, identifyAttrs, ZAP_CLUSTER_MASK(SERVER), identifyIncomingCommands, nullptr),
+    DECLARE_DYNAMIC_CLUSTER(BridgedDeviceBasicInformation::Id, bridgedDeviceBasicAttrs, ZAP_CLUSTER_MASK(SERVER), nullptr,
+                            nullptr),
+    DECLARE_DYNAMIC_CLUSTER(Groups::Id, groupsAttrs, ZAP_CLUSTER_MASK(SERVER), groupsIncomingCommands, groupsOutgoingCommands),
+    DECLARE_DYNAMIC_CLUSTER(Thermostat::Id, thermostatAttrs, ZAP_CLUSTER_MASK(SERVER), thermostatIncomingCommands, nullptr),
+    DECLARE_DYNAMIC_CLUSTER_LIST_END;
+
+// Declare Bridged Thermostat endpoint
+DECLARE_DYNAMIC_ENDPOINT(bridgedThermostatEndpoint, bridgedThermostatClusters);
+
+} // namespace
 
 int AddDeviceEndpoint(Device * dev, EmberAfEndpointType * ep, const Span<const EmberAfDeviceType> & deviceTypeList,
                       const Span<DataVersion> & dataVersionStorage, chip::EndpointId parentEndpointId)
@@ -361,6 +630,24 @@ const EmberAfDeviceType gAggregateNodeDeviceTypes[] = { { DEVICE_TYPE_BRIDGE, DE
 const EmberAfDeviceType gBridgedOnOffDeviceTypes[] = { { DEVICE_TYPE_LO_ON_OFF_LIGHT, DEVICE_VERSION_DEFAULT },
                                                        { DEVICE_TYPE_BRIDGED_NODE, DEVICE_VERSION_DEFAULT } };
 
+const EmberAfDeviceType gBridgedDimmableDeviceTypes[] = { { DEVICE_TYPE_DIMMABLE_LIGHT, DEVICE_VERSION_DEFAULT },
+                                                          { DEVICE_TYPE_BRIDGED_NODE, DEVICE_VERSION_DEFAULT } };
+
+const EmberAfDeviceType gBridgedExtColorDeviceTypes[] = { { DEVICE_TYPE_EXTENDED_COLOR_LIGHT, DEVICE_VERSION_DEFAULT },
+                                                          { DEVICE_TYPE_BRIDGED_NODE, DEVICE_VERSION_DEFAULT } };
+
+const EmberAfDeviceType gBridgedColorTempDeviceTypes[] = { { DEVICE_TYPE_COLOR_TEMPERATURE_LIGHT, DEVICE_VERSION_DEFAULT },
+                                                           { DEVICE_TYPE_BRIDGED_NODE, DEVICE_VERSION_DEFAULT } };
+
+const EmberAfDeviceType gBridgedFanDeviceTypes[] = { { DEVICE_TYPE_FAN, DEVICE_VERSION_DEFAULT },
+                                                     { DEVICE_TYPE_BRIDGED_NODE, DEVICE_VERSION_DEFAULT } };
+
+const EmberAfDeviceType gBridgedWindowCoveringDeviceTypes[] = { { DEVICE_TYPE_WINDOW_COVERING, DEVICE_VERSION_DEFAULT },
+                                                                { DEVICE_TYPE_BRIDGED_NODE, DEVICE_VERSION_DEFAULT } };
+
+const EmberAfDeviceType gBridgedThermostatDeviceTypes[] = { { DEVICE_TYPE_THERMOSTAT, DEVICE_VERSION_DEFAULT },
+                                                            { DEVICE_TYPE_BRIDGED_NODE, DEVICE_VERSION_DEFAULT } };
+
 #if CONFIG_ENABLE_CHIP_SHELL
 using chip::Shell::Engine;
 using chip::Shell::shell_command_t;
@@ -387,39 +674,89 @@ static CHIP_ERROR BridgeHelpHandler(int argc, char ** argv)
     return CHIP_NO_ERROR;
 }
 
+struct BridgedDeviceTypeInfo
+{
+    const char * name;
+    const char * defaultPrefix;
+    EmberAfEndpointType * endpoint;
+    const EmberAfDeviceType * deviceTypes;
+    size_t deviceTypesCount;
+    size_t clusterCount;
+};
+
+// Lookup table mapping CLI type names to their endpoint/device-type definitions.
+// The cluster count is used to allocate the correct number of DataVersion entries.
+static const BridgedDeviceTypeInfo kDeviceTypeTable[] = {
+    { "onoff_light", "OnOff Light", &bridgedLightEndpoint, gBridgedOnOffDeviceTypes,
+      MATTER_ARRAY_SIZE(gBridgedOnOffDeviceTypes), MATTER_ARRAY_SIZE(bridgedLightClusters) },
+    { "dimmable_light", "Dimmable Light", &bridgedDimmableLightEndpoint, gBridgedDimmableDeviceTypes,
+      MATTER_ARRAY_SIZE(gBridgedDimmableDeviceTypes), MATTER_ARRAY_SIZE(bridgedDimmableLightClusters) },
+    { "extended_color_light", "Extended Color Light", &bridgedExtendedColorLightEndpoint, gBridgedExtColorDeviceTypes,
+      MATTER_ARRAY_SIZE(gBridgedExtColorDeviceTypes), MATTER_ARRAY_SIZE(bridgedExtendedColorLightClusters) },
+    { "color_temperature_light", "Color Temperature Light", &bridgedColorTemperatureLightEndpoint, gBridgedColorTempDeviceTypes,
+      MATTER_ARRAY_SIZE(gBridgedColorTempDeviceTypes), MATTER_ARRAY_SIZE(bridgedColorTemperatureLightClusters) },
+    { "fan", "Fan", &bridgedFanEndpoint, gBridgedFanDeviceTypes, MATTER_ARRAY_SIZE(gBridgedFanDeviceTypes),
+      MATTER_ARRAY_SIZE(bridgedFanClusters) },
+    { "window_covering", "Window Covering", &bridgedWindowCoveringEndpoint, gBridgedWindowCoveringDeviceTypes,
+      MATTER_ARRAY_SIZE(gBridgedWindowCoveringDeviceTypes), MATTER_ARRAY_SIZE(bridgedWindowCoveringClusters) },
+    { "thermostat", "Thermostat", &bridgedThermostatEndpoint, gBridgedThermostatDeviceTypes,
+      MATTER_ARRAY_SIZE(gBridgedThermostatDeviceTypes), MATTER_ARRAY_SIZE(bridgedThermostatClusters) },
+};
+
+static const BridgedDeviceTypeInfo * FindDeviceTypeInfo(const char * typeName)
+{
+    for (const auto & entry : kDeviceTypeTable)
+    {
+        if (strcasecmp(typeName, entry.name) == 0)
+        {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
 static CHIP_ERROR BridgeAddHandler(int argc, char ** argv)
 {
-    if (argc > 2)
+    if (argc < 1 || argc > 3)
     {
-        ESP_LOGE(TAG, "Usage: bridge add [name] [location]");
-        ESP_LOGE(TAG, "  name: optional device name (default: 'Light <N>')");
+        ESP_LOGE(TAG, "Usage: bridge add <type> [name] [location]");
+        ESP_LOGE(TAG, "  type: onoff_light, dimmable_light, extended_color_light,");
+        ESP_LOGE(TAG, "        color_temperature_light, fan, window_covering, thermostat");
+        ESP_LOGE(TAG, "  name: optional device name");
         ESP_LOGE(TAG, "  location: optional location (default: 'Room')");
         return CHIP_ERROR_INVALID_ARGUMENT;
     }
 
-    // Check if we have room for more devices
+    const BridgedDeviceTypeInfo * typeInfo = FindDeviceTypeInfo(argv[0]);
+    if (typeInfo == nullptr)
+    {
+        ESP_LOGE(TAG, "Unknown device type '%s'", argv[0]);
+        ESP_LOGE(TAG, "  Supported: onoff_light, dimmable_light, extended_color_light,");
+        ESP_LOGE(TAG, "             color_temperature_light, fan, window_covering, thermostat");
+        return CHIP_ERROR_INVALID_ARGUMENT;
+    }
+
     if (gBridgedDeviceCount >= kMaxBridgedDevices)
     {
         ESP_LOGE(TAG, "Max bridged devices reached (%u). Cannot add more.", kMaxBridgedDevices);
         return CHIP_ERROR_NO_MEMORY;
     }
 
-    // Create device name - use device count + 1 for default naming
     char defaultName[32];
     const char * name;
-    if (argc >= 1)
+    if (argc >= 2)
     {
-        name = argv[0];
+        name = argv[1];
     }
     else
     {
-        snprintf(defaultName, sizeof(defaultName), "Light %u", gBridgedDeviceCount + 1);
+        snprintf(defaultName, sizeof(defaultName), "%s %u", typeInfo->defaultPrefix,
+                 static_cast<unsigned>(gBridgedDeviceCount + 1));
         name = defaultName;
     }
 
-    const char * location = (argc >= 2) ? argv[1] : "Room";
+    const char * location = (argc >= 3) ? argv[2] : "Room";
 
-    // Allocate new device and data versions
     Device * newDevice = new (std::nothrow) Device(name, location);
     if (newDevice == nullptr)
     {
@@ -427,22 +764,24 @@ static CHIP_ERROR BridgeAddHandler(int argc, char ** argv)
         return CHIP_ERROR_NO_MEMORY;
     }
 
-    DataVersion * newDataVersions = new (std::nothrow) DataVersion[MATTER_ARRAY_SIZE(bridgedLightClusters)];
+    DataVersion * newDataVersions = new (std::nothrow) DataVersion[typeInfo->clusterCount];
     if (newDataVersions == nullptr)
     {
         delete newDevice;
         ESP_LOGE(TAG, "Failed to allocate memory for data versions");
         return CHIP_ERROR_NO_MEMORY;
     }
-    memset(newDataVersions, 0, sizeof(DataVersion) * MATTER_ARRAY_SIZE(bridgedLightClusters));
+    memset(newDataVersions, 0, sizeof(DataVersion) * typeInfo->clusterCount);
 
-    // Set device as reachable and configure callback
     newDevice->SetReachable(true);
     newDevice->SetChangeCallback(&HandleDeviceStatusChanged);
 
-    // Try to add the device endpoint
-    int result = AddDeviceEndpoint(newDevice, &bridgedLightEndpoint, Span<const EmberAfDeviceType>(gBridgedOnOffDeviceTypes),
-                                   Span<DataVersion>(newDataVersions, MATTER_ARRAY_SIZE(bridgedLightClusters)), 1);
+    // AddDeviceEndpoint stores newDevice in gDevices[result] internally,
+    // so we only need to track the data versions at the same index.
+    int result = AddDeviceEndpoint(
+        newDevice, typeInfo->endpoint,
+        Span<const EmberAfDeviceType>(typeInfo->deviceTypes, typeInfo->deviceTypesCount),
+        Span<DataVersion>(newDataVersions, typeInfo->clusterCount), 1);
     if (result < 0)
     {
         delete newDevice;
@@ -451,32 +790,11 @@ static CHIP_ERROR BridgeAddHandler(int argc, char ** argv)
         return CHIP_ERROR_ENDPOINT_POOL_FULL;
     }
 
-    // Find first empty slot in our tracking array
-    bool slotFound = false;
-    for (size_t i = 0; i < kMaxBridgedDevices; i++)
-    {
-        if (gDevices[i] == nullptr)
-        {
-            gDevices[i]             = newDevice;
-            gBridgedDataVersions[i] = newDataVersions;
-            gBridgedDeviceCount++;
-            slotFound = true;
-            break;
-        }
-    }
+    gBridgedDataVersions[result] = newDataVersions;
+    gBridgedDeviceCount++;
 
-    if (!slotFound)
-    {
-        // This shouldn't happen if gBridgedDeviceCount is accurate, but handle it gracefully
-        ESP_LOGE(TAG, "Internal error: no slot found despite count check. Cleaning up.");
-        RemoveDeviceEndpoint(newDevice);
-        delete newDevice;
-        delete[] newDataVersions;
-        return CHIP_ERROR_INTERNAL;
-    }
-
-    ESP_LOGI(TAG, "Added '%s' @ %s (endpoint %d) [%u/%u]", name, location, newDevice->GetEndpointId(), gBridgedDeviceCount,
-             kMaxBridgedDevices);
+    ESP_LOGI(TAG, "Added %s '%s' @ %s (endpoint %d) [%u/%u]", typeInfo->name, name, location, newDevice->GetEndpointId(),
+             gBridgedDeviceCount, kMaxBridgedDevices);
 
     return CHIP_NO_ERROR;
 }
@@ -539,8 +857,8 @@ static CHIP_ERROR BridgeListHandler(int argc, char ** argv)
         {
             if (gDevices[i] != nullptr)
             {
-                ESP_LOGI(TAG, "  \"%s\" @ %s (endpoint %d, %s)", gDevices[i]->GetName(), gDevices[i]->GetLocation(),
-                         gDevices[i]->GetEndpointId(), gDevices[i]->IsOn() ? "ON" : "OFF");
+                ESP_LOGI(TAG, "  \"%s\" @ %s (endpoint %d)", gDevices[i]->GetName(), gDevices[i]->GetLocation(),
+                         gDevices[i]->GetEndpointId());
             }
         }
     }
@@ -552,7 +870,6 @@ static CHIP_ERROR BridgeToggleHandler(int argc, char ** argv)
 {
     if (argc == 1)
     {
-        // Perform OnOff::Toggle on the bridged endpoint: bridge toggle <endpoint>
         char * end;
         chip::EndpointId endpointId = strtoul(argv[0], &end, 10);
         if (end == argv[0] || *end != '\0' || endpointId > 0xFFFF)
@@ -569,17 +886,22 @@ static CHIP_ERROR BridgeToggleHandler(int argc, char ** argv)
             return err;
         }
 
+        if (!emberAfContainsServer(endpointId, OnOff::Id))
+        {
+            ESP_LOGE(TAG, "'%s' (endpoint %u) does not support OnOff", gDevices[index]->GetName(), endpointId);
+            return CHIP_ERROR_INVALID_ARGUMENT;
+        }
+
         gDevices[index]->SetOnOff(!gDevices[index]->IsOn());
         ESP_LOGI(TAG, "Toggled '%s' (endpoint %u): now %s", gDevices[index]->GetName(), endpointId,
                  gDevices[index]->IsOn() ? "ON" : "OFF");
     }
     else
     {
-        // Toggle all devices
-        ESP_LOGI(TAG, "Toggling all devices:");
+        ESP_LOGI(TAG, "Toggling all OnOff devices:");
         for (size_t i = 0; i < kMaxBridgedDevices; i++)
         {
-            if (gDevices[i] != nullptr)
+            if (gDevices[i] != nullptr && emberAfContainsServer(gDevices[i]->GetEndpointId(), OnOff::Id))
             {
                 gDevices[i]->SetOnOff(!gDevices[i]->IsOn());
                 ESP_LOGI(TAG, "  '%s': now %s", gDevices[i]->GetName(), gDevices[i]->IsOn() ? "ON" : "OFF");
@@ -645,12 +967,12 @@ static void RegisterBridgeCommands()
 {
     static const shell_command_t sBridgeSubCommands[] = {
         { &BridgeHelpHandler, "help", "Usage: bridge <subcommand>" },
-        { &BridgeAddHandler, "add", "Add device: bridge add [name] [location]" },
+        { &BridgeAddHandler, "add", "Add device: bridge add <type> [name] [location]" },
         { &BridgeRemoveHandler, "remove", "Remove device: bridge remove <endpoint>" },
         { &BridgeRemoveAllHandler, "remove_all", "Remove all bridged devices" },
         { &BridgeMaxHandler, "max", "Show max endpoint limits" },
         { &BridgeListHandler, "list", "List all bridged devices" },
-        { &BridgeToggleHandler, "toggle", "Toggle: bridge toggle [endpoint] or all" },
+        { &BridgeToggleHandler, "toggle", "Toggle OnOff: bridge toggle [endpoint] (devices with OnOff cluster)" },
     };
 
     static const shell_command_t sBridgeCommand = { &BridgeCommandHandler, "bridge",
@@ -682,11 +1004,11 @@ static void InitServer(intptr_t context)
     emberAfSetDeviceTypeList(1, Span<const EmberAfDeviceType>(gAggregateNodeDeviceTypes));
 
     // Bridge starts with no bridged devices - use shell commands to add them:
-    //   bridge add [name] [location]
+    //   bridge add <type> [name] [location]
     //   bridge remove <endpoint>
     //   bridge list
     //   bridge max
-    ESP_LOGI(TAG, "Bridge ready. Use 'bridge add [name] [location]' to add devices. Max devices: %u", kMaxBridgedDevices);
+    ESP_LOGI(TAG, "Bridge ready. Use 'bridge add <type> [name] [location]' to add devices. Max devices: %u", kMaxBridgedDevices);
 }
 
 void emberAfActionsClusterInitCallback(EndpointId endpoint)
