@@ -18,6 +18,7 @@
 #include "Device.h"
 #include "DeviceCallbacks.h"
 #include "esp_log.h"
+#include "nvs.h"
 #include "nvs_flash.h"
 #include "shell_extension/launch.h"
 #include "shell_extension/openthread_cli_register.h"
@@ -96,6 +97,128 @@ static Device * gDevices[CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT]; // number o
 static constexpr size_t kMaxBridgedDevices = CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT;
 static DataVersion * gBridgedDataVersions[kMaxBridgedDevices];
 static size_t gBridgedDeviceCount = 0;
+
+// NVS persistence for bridged devices
+static constexpr const char * kBridgeNvsNamespace = "bridge_devs";
+static constexpr const char * kEndpointIdsKey     = "ep_id_array";
+
+static uint16_t gBridgedEndpointIds[kMaxBridgedDevices];
+
+struct BridgedDevicePersistentInfo
+{
+    uint8_t deviceTypeIndex;
+    char name[Device::kDeviceNameSize];
+    char location[Device::kDeviceLocationSize];
+};
+
+static esp_err_t StoreBridgedEndpointIds()
+{
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open(kBridgeNvsNamespace, NVS_READWRITE, &handle);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "NVS open failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    err = nvs_set_blob(handle, kEndpointIdsKey, gBridgedEndpointIds, sizeof(gBridgedEndpointIds));
+    if (err == ESP_OK)
+    {
+        err = nvs_commit(handle);
+    }
+    nvs_close(handle);
+    return err;
+}
+
+static esp_err_t ReadBridgedEndpointIds()
+{
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open(kBridgeNvsNamespace, NVS_READONLY, &handle);
+    if (err != ESP_OK)
+    {
+        memset(gBridgedEndpointIds, 0xFF, sizeof(gBridgedEndpointIds));
+        return err;
+    }
+    size_t len = sizeof(gBridgedEndpointIds);
+    err        = nvs_get_blob(handle, kEndpointIdsKey, gBridgedEndpointIds, &len);
+    nvs_close(handle);
+    if (err != ESP_OK)
+    {
+        memset(gBridgedEndpointIds, 0xFF, sizeof(gBridgedEndpointIds));
+    }
+    return err;
+}
+
+static esp_err_t StoreDevicePersistentInfo(uint16_t endpointId, const BridgedDevicePersistentInfo & info)
+{
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open(kBridgeNvsNamespace, NVS_READWRITE, &handle);
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+    char key[16];
+    snprintf(key, sizeof(key), "ep_info_%u", endpointId);
+    err = nvs_set_blob(handle, key, &info, sizeof(info));
+    if (err == ESP_OK)
+    {
+        err = nvs_commit(handle);
+    }
+    nvs_close(handle);
+    return err;
+}
+
+static esp_err_t ReadDevicePersistentInfo(uint16_t endpointId, BridgedDevicePersistentInfo & info)
+{
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open(kBridgeNvsNamespace, NVS_READONLY, &handle);
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+    char key[16];
+    snprintf(key, sizeof(key), "ep_info_%u", endpointId);
+    size_t len = sizeof(info);
+    err        = nvs_get_blob(handle, key, &info, &len);
+    nvs_close(handle);
+    return err;
+}
+
+static esp_err_t EraseDevicePersistentInfo(uint16_t endpointId)
+{
+    for (size_t i = 0; i < kMaxBridgedDevices; i++)
+    {
+        if (gBridgedEndpointIds[i] == endpointId)
+        {
+            gBridgedEndpointIds[i] = kInvalidEndpointId;
+        }
+    }
+    StoreBridgedEndpointIds();
+
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open(kBridgeNvsNamespace, NVS_READWRITE, &handle);
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+    char key[16];
+    snprintf(key, sizeof(key), "ep_info_%u", endpointId);
+    err = nvs_erase_key(handle, key);
+    nvs_commit(handle);
+    nvs_close(handle);
+    return err;
+}
+
+static void EraseAllBridgePersistence()
+{
+    nvs_handle_t handle;
+    if (nvs_open(kBridgeNvsNamespace, NVS_READWRITE, &handle) == ESP_OK)
+    {
+        nvs_erase_all(handle);
+        nvs_commit(handle);
+        nvs_close(handle);
+    }
+    memset(gBridgedEndpointIds, 0xFF, sizeof(gBridgedEndpointIds));
+}
 
 // (taken from chip-devices.xml)
 #define DEVICE_TYPE_BRIDGED_NODE 0x0013
@@ -471,6 +594,33 @@ int AddDeviceEndpoint(Device * dev, EmberAfEndpointType * ep, const Span<const E
     return -1;
 }
 
+int ResumeDeviceEndpoint(Device * dev, EmberAfEndpointType * ep, const Span<const EmberAfDeviceType> & deviceTypeList,
+                         const Span<DataVersion> & dataVersionStorage, chip::EndpointId endpointId,
+                         chip::EndpointId parentEndpointId)
+{
+    uint8_t index = 0;
+    while (index < CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT)
+    {
+        if (NULL == gDevices[index])
+        {
+            gDevices[index] = dev;
+            dev->SetEndpointId(endpointId);
+            CHIP_ERROR err = emberAfSetDynamicEndpoint(index, endpointId, ep, dataVersionStorage, deviceTypeList, parentEndpointId);
+            if (err == CHIP_NO_ERROR)
+            {
+                ChipLogProgress(DeviceLayer, "Resumed device %s to dynamic endpoint %d (index=%d)", dev->GetName(), endpointId,
+                                index);
+                return index;
+            }
+            gDevices[index] = nullptr;
+            return -1;
+        }
+        index++;
+    }
+    ChipLogProgress(DeviceLayer, "Failed to resume dynamic endpoint: No slots available!");
+    return -1;
+}
+
 CHIP_ERROR RemoveDeviceEndpoint(Device * dev)
 {
     for (uint8_t index = 0; index < CHIP_DEVICE_CONFIG_DYNAMIC_ENDPOINT_COUNT; index++)
@@ -648,32 +798,6 @@ const EmberAfDeviceType gBridgedWindowCoveringDeviceTypes[] = { { DEVICE_TYPE_WI
 const EmberAfDeviceType gBridgedThermostatDeviceTypes[] = { { DEVICE_TYPE_THERMOSTAT, DEVICE_VERSION_DEFAULT },
                                                             { DEVICE_TYPE_BRIDGED_NODE, DEVICE_VERSION_DEFAULT } };
 
-#if CONFIG_ENABLE_CHIP_SHELL
-using chip::Shell::Engine;
-using chip::Shell::shell_command_t;
-
-Engine sShellBridgeSubCommands;
-
-// Find device index by endpoint ID
-static CHIP_ERROR FindDeviceByEndpoint(EndpointId endpointId, uint16_t & index)
-{
-    for (size_t i = 0; i < kMaxBridgedDevices; i++)
-    {
-        if (gDevices[i] != nullptr && gDevices[i]->GetEndpointId() == endpointId)
-        {
-            index = static_cast<uint16_t>(i);
-            return CHIP_NO_ERROR;
-        }
-    }
-    return CHIP_ERROR_NOT_FOUND;
-}
-
-static CHIP_ERROR BridgeHelpHandler(int argc, char ** argv)
-{
-    sShellBridgeSubCommands.ForEachCommand(chip::Shell::PrintCommandHelp, nullptr);
-    return CHIP_NO_ERROR;
-}
-
 struct BridgedDeviceTypeInfo
 {
     const char * name;
@@ -684,8 +808,6 @@ struct BridgedDeviceTypeInfo
     size_t clusterCount;
 };
 
-// Lookup table mapping CLI type names to their endpoint/device-type definitions.
-// The cluster count is used to allocate the correct number of DataVersion entries.
 static const BridgedDeviceTypeInfo kDeviceTypeTable[] = {
     { "onoff_light", "OnOff Light", &bridgedLightEndpoint, gBridgedOnOffDeviceTypes,
       MATTER_ARRAY_SIZE(gBridgedOnOffDeviceTypes), MATTER_ARRAY_SIZE(bridgedLightClusters) },
@@ -713,6 +835,45 @@ static const BridgedDeviceTypeInfo * FindDeviceTypeInfo(const char * typeName)
         }
     }
     return nullptr;
+}
+
+static bool FindDeviceTypeIndex(const char * typeName, size_t & outIndex)
+{
+    for (size_t i = 0; i < MATTER_ARRAY_SIZE(kDeviceTypeTable); i++)
+    {
+        if (strcasecmp(typeName, kDeviceTypeTable[i].name) == 0)
+        {
+            outIndex = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+#if CONFIG_ENABLE_CHIP_SHELL
+using chip::Shell::Engine;
+using chip::Shell::shell_command_t;
+
+Engine sShellBridgeSubCommands;
+
+// Find device index by endpoint ID
+static CHIP_ERROR FindDeviceByEndpoint(EndpointId endpointId, uint16_t & index)
+{
+    for (size_t i = 0; i < kMaxBridgedDevices; i++)
+    {
+        if (gDevices[i] != nullptr && gDevices[i]->GetEndpointId() == endpointId)
+        {
+            index = static_cast<uint16_t>(i);
+            return CHIP_NO_ERROR;
+        }
+    }
+    return CHIP_ERROR_NOT_FOUND;
+}
+
+static CHIP_ERROR BridgeHelpHandler(int argc, char ** argv)
+{
+    sShellBridgeSubCommands.ForEachCommand(chip::Shell::PrintCommandHelp, nullptr);
+    return CHIP_NO_ERROR;
 }
 
 static CHIP_ERROR BridgeAddHandler(int argc, char ** argv)
@@ -793,6 +954,23 @@ static CHIP_ERROR BridgeAddHandler(int argc, char ** argv)
     gBridgedDataVersions[result] = newDataVersions;
     gBridgedDeviceCount++;
 
+    // Persist to NVS
+    size_t typeIndex;
+    if (FindDeviceTypeIndex(argv[0], typeIndex))
+    {
+        BridgedDevicePersistentInfo persistInfo;
+        memset(&persistInfo, 0, sizeof(persistInfo));
+        persistInfo.deviceTypeIndex = static_cast<uint8_t>(typeIndex);
+        chip::Platform::CopyString(persistInfo.name, name);
+        chip::Platform::CopyString(persistInfo.location, location);
+
+        uint16_t epId = newDevice->GetEndpointId();
+        StoreDevicePersistentInfo(epId, persistInfo);
+        gBridgedEndpointIds[result] = epId;
+        StoreBridgedEndpointIds();
+        ESP_LOGI(TAG, "Persisted device to NVS (endpoint %u, slot %d)", epId, result);
+    }
+
     ESP_LOGI(TAG, "Added %s '%s' @ %s (endpoint %d) [%u/%u]", typeInfo->name, name, location, newDevice->GetEndpointId(),
              gBridgedDeviceCount, kMaxBridgedDevices);
 
@@ -828,6 +1006,7 @@ static CHIP_ERROR BridgeRemoveHandler(int argc, char ** argv)
     if (err == CHIP_NO_ERROR)
     {
         ESP_LOGI(TAG, "Removed '%s' from endpoint %u", name, endpointId);
+        EraseDevicePersistentInfo(endpointId);
         delete gDevices[index];
         delete[] gBridgedDataVersions[index];
         gDevices[index]             = nullptr;
@@ -949,8 +1128,9 @@ static CHIP_ERROR BridgeRemoveAllHandler(int argc, char ** argv)
         }
     }
     gBridgedDeviceCount -= removedCount;
+    EraseAllBridgePersistence();
 
-    ESP_LOGI(TAG, "Removed %d devices total", removedCount);
+    ESP_LOGI(TAG, "Removed %d devices total, NVS cleared", removedCount);
     return CHIP_NO_ERROR;
 }
 
@@ -983,6 +1163,91 @@ static void RegisterBridgeCommands()
 }
 #endif // CONFIG_ENABLE_CHIP_SHELL
 
+static void ResumeBridgedDevices()
+{
+    ReadBridgedEndpointIds();
+
+    size_t resumedCount = 0;
+    for (size_t i = 0; i < kMaxBridgedDevices; i++)
+    {
+        uint16_t epId = gBridgedEndpointIds[i];
+        if (epId == kInvalidEndpointId)
+        {
+            continue;
+        }
+
+        BridgedDevicePersistentInfo persistInfo;
+        if (ReadDevicePersistentInfo(epId, persistInfo) != ESP_OK)
+        {
+            ESP_LOGW(TAG, "Failed to read NVS info for endpoint %u, skipping", epId);
+            gBridgedEndpointIds[i] = kInvalidEndpointId;
+            continue;
+        }
+
+        if (persistInfo.deviceTypeIndex >= MATTER_ARRAY_SIZE(kDeviceTypeTable))
+        {
+            ESP_LOGW(TAG, "Invalid device type index %u for endpoint %u, skipping", persistInfo.deviceTypeIndex, epId);
+            gBridgedEndpointIds[i] = kInvalidEndpointId;
+            continue;
+        }
+
+        const BridgedDeviceTypeInfo * typeInfo = &kDeviceTypeTable[persistInfo.deviceTypeIndex];
+
+        Device * dev = new (std::nothrow) Device(persistInfo.name, persistInfo.location);
+        if (dev == nullptr)
+        {
+            ESP_LOGE(TAG, "Failed to allocate Device for endpoint %u", epId);
+            continue;
+        }
+
+        DataVersion * dataVersions = new (std::nothrow) DataVersion[typeInfo->clusterCount];
+        if (dataVersions == nullptr)
+        {
+            delete dev;
+            ESP_LOGE(TAG, "Failed to allocate DataVersions for endpoint %u", epId);
+            continue;
+        }
+        memset(dataVersions, 0, sizeof(DataVersion) * typeInfo->clusterCount);
+
+        dev->SetReachable(true);
+        dev->SetChangeCallback(&HandleDeviceStatusChanged);
+
+        int result = ResumeDeviceEndpoint(
+            dev, typeInfo->endpoint,
+            Span<const EmberAfDeviceType>(typeInfo->deviceTypes, typeInfo->deviceTypesCount),
+            Span<DataVersion>(dataVersions, typeInfo->clusterCount), static_cast<chip::EndpointId>(epId), 1);
+        if (result < 0)
+        {
+            delete dev;
+            delete[] dataVersions;
+            ESP_LOGE(TAG, "Failed to resume endpoint %u", epId);
+            gBridgedEndpointIds[i] = kInvalidEndpointId;
+            continue;
+        }
+
+        gBridgedDataVersions[result] = dataVersions;
+        gBridgedDeviceCount++;
+        resumedCount++;
+
+        // Advance gCurrentEndpointId past any resumed endpoint IDs to avoid collisions
+        if (epId >= gCurrentEndpointId)
+        {
+            gCurrentEndpointId = epId + 1;
+            if (gCurrentEndpointId < gFirstDynamicEndpointId)
+            {
+                gCurrentEndpointId = gFirstDynamicEndpointId;
+            }
+        }
+
+        ESP_LOGI(TAG, "Resumed %s '%s' @ %s (endpoint %u)", typeInfo->name, persistInfo.name, persistInfo.location, epId);
+    }
+
+    if (resumedCount > 0)
+    {
+        ESP_LOGI(TAG, "Restored %u bridged device(s) from NVS", resumedCount);
+    }
+}
+
 static void InitServer(intptr_t context)
 {
     PrintOnboardingCodes(chip::RendezvousInformationFlags(CONFIG_RENDEZVOUS_MODE));
@@ -1003,11 +1268,9 @@ static void InitServer(intptr_t context)
     emberAfSetDeviceTypeList(0, Span<const EmberAfDeviceType>(gRootDeviceTypes));
     emberAfSetDeviceTypeList(1, Span<const EmberAfDeviceType>(gAggregateNodeDeviceTypes));
 
-    // Bridge starts with no bridged devices - use shell commands to add them:
-    //   bridge add <type> [name] [location]
-    //   bridge remove <endpoint>
-    //   bridge list
-    //   bridge max
+    // Restore any bridged devices persisted in NVS from previous boot
+    ResumeBridgedDevices();
+
     ESP_LOGI(TAG, "Bridge ready. Use 'bridge add <type> [name] [location]' to add devices. Max devices: %u", kMaxBridgedDevices);
 }
 
@@ -1055,6 +1318,7 @@ extern "C" void app_main()
     // Clear database
     memset(gDevices, 0, sizeof(gDevices));
     memset(gBridgedDataVersions, 0, sizeof(gBridgedDataVersions));
+    memset(gBridgedEndpointIds, 0xFF, sizeof(gBridgedEndpointIds));
     gBridgedDeviceCount = 0;
 
 #if CHIP_DEVICE_CONFIG_ENABLE_WIFI
