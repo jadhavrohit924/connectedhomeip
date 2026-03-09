@@ -97,7 +97,7 @@ private:
     void SetCurrentState(const ValveConfigurationAndControl::ValveStateEnum & newState);
     CHIP_ERROR SetAutoCloseTime(DataModel::Nullable<uint32_t> openDuration);
     void EmitValveChangeEvent(ValveConfigurationAndControl::ValveStateEnum newState);
-    
+
     // Attributes
     const BitFlags<ValveConfigurationAndControl::Feature> mFeatures;
     const OptionalAttributeSet mOptionalAttributeSet;
