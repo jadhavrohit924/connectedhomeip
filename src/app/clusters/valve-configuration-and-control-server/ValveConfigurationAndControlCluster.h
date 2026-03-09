@@ -30,8 +30,6 @@
 #include <clusters/ValveConfigurationAndControl/Metadata.h>
 #include <system/SystemLayer.h>
 
-#include <utility>
-
 namespace chip::app::Clusters {
 class ValveConfigurationAndControlCluster : public DefaultServerCluster
 {

@@ -153,7 +153,6 @@ DataModel::ActionReturnStatus ValveConfigurationAndControlCluster::WriteImpl(con
 
     if (request.path.mAttributeId == ValveConfigurationAndControl::Attributes::DefaultOpenDuration::Id)
     {
-
         AttributePersistence persistence{ mContext->attributeStorage };
         return persistence.DecodeAndStoreNativeEndianValue(request.path, decoder, mDefaultOpenDuration);
     }
