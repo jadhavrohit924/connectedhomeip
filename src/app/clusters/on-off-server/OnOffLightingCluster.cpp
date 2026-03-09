@@ -221,7 +221,8 @@ std::optional<DataModel::ActionReturnStatus> OnOffLightingCluster::InvokeCommand
 bool OnOffLightingCluster::SetOnTime(uint16_t value)
 {
     VerifyOrReturnValue(mOnTime != value, true);
-    VerifyOrReturnValue(CallDelegatesForAttributeChange([&value](auto & delegate) { return delegate.OnOnTimeChanged(value); }), false);
+    VerifyOrReturnValue(CallDelegatesForAttributeChange([&value](auto & delegate) { return delegate.OnOnTimeChanged(value); }),
+                        false);
     SetAttributeValue(mOnTime, value, Attributes::OnTime::Id);
     UpdateTimer();
     return true;
@@ -230,7 +231,8 @@ bool OnOffLightingCluster::SetOnTime(uint16_t value)
 bool OnOffLightingCluster::SetOffWaitTime(uint16_t value)
 {
     VerifyOrReturnValue(mOffWaitTime != value, true);
-    VerifyOrReturnValue(CallDelegatesForAttributeChange([&value](auto & delegate) { return delegate.OnOffWaitTimeChanged(value); }), false);
+    VerifyOrReturnValue(CallDelegatesForAttributeChange([&value](auto & delegate) { return delegate.OnOffWaitTimeChanged(value); }),
+                        false);
     SetAttributeValue(mOffWaitTime, value, Attributes::OffWaitTime::Id);
     UpdateTimer();
     return true;
@@ -238,10 +240,11 @@ bool OnOffLightingCluster::SetOffWaitTime(uint16_t value)
 
 DataModel::ActionReturnStatus OnOffLightingCluster::SetStartupOnOff(DataModel::Nullable<OnOff::StartUpOnOffEnum> value)
 {
-    VerifyOrReturnError(value.IsNull() || value.Value() != OnOff::StartUpOnOffEnum::kUnknownEnumValue,
-                        Status::ConstraintError);
+    VerifyOrReturnError(value.IsNull() || value.Value() != OnOff::StartUpOnOffEnum::kUnknownEnumValue, Status::ConstraintError);
     VerifyOrReturnValue(mStartUpOnOff != value, DataModel::ActionReturnStatus::FixedStatus::kWriteSuccessNoOp);
-    VerifyOrReturnValue(CallDelegatesForAttributeChange([&value](auto & delegate) { return delegate.OnStartUpOnOffChanged(value); }), Status::Failure);
+    VerifyOrReturnValue(
+        CallDelegatesForAttributeChange([&value](auto & delegate) { return delegate.OnStartUpOnOffChanged(value); }),
+        Status::Failure);
     SetAttributeValue(mStartUpOnOff, value, Attributes::StartUpOnOff::Id);
 
     if (mContext != nullptr)
