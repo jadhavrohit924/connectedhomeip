@@ -35,13 +35,14 @@ public:
 
     /// Called when the OnOff attribute has changed.
     /// The delegate should update the hardware state to match the new value.
+    /// @return True if the on/off change should be committed, false otherwise.
     ///
     /// This is NOT called as part of startup.
-    virtual void OnOnOffChanged(bool on) = 0;
+    virtual bool OnOnOffChanged(bool on) { return true; }
 
-    virtual void OnOnTimeChanged(uint16_t onTime) {}
-    virtual void OnOffWaitTimeChanged(uint16_t offWaitTime) {}
-    virtual void OnStartUpOnOffChanged(DataModel::Nullable<OnOff::StartUpOnOffEnum> startUpOnOff) {}
+    virtual bool OnOnTimeChanged(uint16_t onTime) { return true; }
+    virtual bool OnOffWaitTimeChanged(uint16_t offWaitTime) { return true; }
+    virtual bool OnStartUpOnOffChanged(DataModel::Nullable<OnOff::StartUpOnOffEnum> startUpOnOff) { return true; }
 };
 
 } // namespace chip::app::Clusters

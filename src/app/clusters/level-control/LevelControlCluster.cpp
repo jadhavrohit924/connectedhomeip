@@ -803,9 +803,9 @@ void LevelControlCluster::TransitionHandler::TimerFired()
     SuccessOrDie(mCluster.mTimerDelegate.StartTimer(this, System::Clock::Milliseconds64(mTickDurationMs)));
 }
 
-void LevelControlCluster::OnOnOffChanged(bool isOn)
+bool LevelControlCluster::OnOnOffChanged(bool isOn)
 {
-    VerifyOrReturn(!mCurrentLevel.value().IsNull() && !mTemporarilyIgnoreOnOffCallbacks);
+    VerifyOrReturnValue(!mCurrentLevel.value().IsNull() && !mTemporarilyIgnoreOnOffCallbacks, true);
 
     if (isOn)
     {
@@ -856,6 +856,7 @@ void LevelControlCluster::OnOnOffChanged(bool isOn)
         // This allows us to restore the pre-off level after the transition completes.
         MoveToLevelCommand(kInternalOffTransition, mMinLevel, transitionTime, optionsMask, optionsOverride);
     }
+    return true;
 }
 
 bool LevelControlCluster::ShouldExecuteIfOff(BitMask<OptionsBitmap> optionsMask, BitMask<OptionsBitmap> optionsOverride)

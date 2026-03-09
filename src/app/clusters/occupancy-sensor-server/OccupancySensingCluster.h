@@ -31,14 +31,16 @@ public:
     /**
      * @brief Called when the occupancy state changes.
      * @param occupied The new occupancy state.
+     * @return True if the occupancy change should be committed, false otherwise.
      */
-    virtual void OnOccupancyChanged(bool occupied){};
+    virtual bool OnOccupancyChanged(bool occupied) { return true; }
 
     /**
      * @brief Called when the hold time changes.
      * @param holdTime The new hold time.
+     * @return True if the hold time change should be committed, false otherwise.
      */
-    virtual void OnHoldTimeChanged(uint16_t holdTime){};
+    virtual bool OnHoldTimeChanged(uint16_t holdTime) { return true; }
 };
 
 class OccupancySensingCluster : public DefaultServerCluster, public TimerContext

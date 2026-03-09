@@ -118,10 +118,11 @@ public:
         mStartupCalled = false;
     }
 
-    void OnOnOffChanged(bool on) override
+    bool OnOnOffChanged(bool on) override
     {
         mOnOff  = on;
         mCalled = true;
+        return true;
     }
 
     void OnOffStartup(bool on) override
@@ -304,7 +305,7 @@ TEST_F(TestOnOffLightingCluster, Startup_TogglePersists)
     EXPECT_TRUE(onOffState);
 
     // ensure we do not toggle again (i.e. keep on)
-    EXPECT_EQ(mCluster.SetStartupOnOff({}), CHIP_NO_ERROR);
+    EXPECT_EQ(mCluster.SetStartupOnOff({}), Status::Success);
 
     // Shutdown and Startup again
     mCluster.Shutdown(ClusterShutdownType::kClusterShutdown);
@@ -333,12 +334,12 @@ TEST_F(TestOnOffLightingCluster, TestSetters)
 
     // Test SetStartupOnOff
     DataModel::Nullable<StartUpOnOffEnum> startUpOnOff;
-    EXPECT_EQ(mCluster.SetStartupOnOff(StartUpOnOffEnum::kOn), CHIP_NO_ERROR);
+    EXPECT_EQ(mCluster.SetStartupOnOff(StartUpOnOffEnum::kOn), Status::Success);
     EXPECT_EQ(mClusterTester.ReadAttribute(Attributes::StartUpOnOff::Id, startUpOnOff), CHIP_NO_ERROR);
     EXPECT_FALSE(startUpOnOff.IsNull());
     EXPECT_EQ(startUpOnOff.Value(), StartUpOnOffEnum::kOn);
 
-    EXPECT_EQ(mCluster.SetStartupOnOff({}), CHIP_NO_ERROR);
+    EXPECT_EQ(mCluster.SetStartupOnOff({}), Status::Success);
     EXPECT_EQ(mClusterTester.ReadAttribute(Attributes::StartUpOnOff::Id, startUpOnOff), CHIP_NO_ERROR);
     EXPECT_TRUE(startUpOnOff.IsNull());
 }

@@ -174,28 +174,21 @@ DataModel::ActionReturnStatus OnOffLightingCluster::WriteImpl(const DataModel::W
         uint16_t value;
         ReturnErrorOnFailure(decoder.Decode(value));
         VerifyOrReturnValue(mOnTime != value, DataModel::ActionReturnStatus::FixedStatus::kWriteSuccessNoOp);
-        mOnTime = value;
-        UpdateTimer();
-        CallDelegatesForAttributeChange([this](auto & delegate) { delegate.OnOnTimeChanged(mOnTime); });
+        VerifyOrReturnValue(SetOnTime(value), Status::Failure);
         return Status::Success;
     }
     case Attributes::OffWaitTime::Id: {
         uint16_t value;
         ReturnErrorOnFailure(decoder.Decode(value));
         VerifyOrReturnValue(mOffWaitTime != value, DataModel::ActionReturnStatus::FixedStatus::kWriteSuccessNoOp);
-        mOffWaitTime = value;
-        UpdateTimer();
-        CallDelegatesForAttributeChange([this](auto & delegate) { delegate.OnOffWaitTimeChanged(mOffWaitTime); });
+        VerifyOrReturnValue(SetOffWaitTime(value), Status::Failure);
         return Status::Success;
     }
     case Attributes::StartUpOnOff::Id: {
-        AttributePersistence persistence(mContext->attributeStorage);
-        auto status = persistence.DecodeAndStoreNativeEndianValue(request.path, decoder, mStartUpOnOff);
-        if (status.IsSuccess())
-        {
-            CallDelegatesForAttributeChange([this](auto & delegate) { delegate.OnStartUpOnOffChanged(mStartUpOnOff); });
-        }
-        return status;
+        DataModel::Nullable<OnOff::StartUpOnOffEnum> value;
+        ReturnErrorOnFailure(decoder.Decode(value));
+        VerifyOrReturnValue(mStartUpOnOff != value, DataModel::ActionReturnStatus::FixedStatus::kWriteSuccessNoOp);
+        return SetStartupOnOff(value);
     }
     default:
         return Protocols::InteractionModel::Status::UnsupportedWrite;
@@ -225,23 +218,31 @@ std::optional<DataModel::ActionReturnStatus> OnOffLightingCluster::InvokeCommand
     }
 }
 
-void OnOffLightingCluster::SetOnTime(uint16_t value)
+bool OnOffLightingCluster::SetOnTime(uint16_t value)
 {
-    VerifyOrReturn(SetAttributeValue(mOnTime, value, Attributes::OnTime::Id));
+    VerifyOrReturnValue(mOnTime != value, true);
+    VerifyOrReturnValue(CallDelegatesForAttributeChange([&value](auto & delegate) { return delegate.OnOnTimeChanged(value); }), false);
+    SetAttributeValue(mOnTime, value, Attributes::OnTime::Id);
     UpdateTimer();
-    CallDelegatesForAttributeChange([this](auto & delegate) { delegate.OnOnTimeChanged(mOnTime); });
+    return true;
 }
 
-void OnOffLightingCluster::SetOffWaitTime(uint16_t value)
+bool OnOffLightingCluster::SetOffWaitTime(uint16_t value)
 {
-    VerifyOrReturn(SetAttributeValue(mOffWaitTime, value, Attributes::OffWaitTime::Id));
+    VerifyOrReturnValue(mOffWaitTime != value, true);
+    VerifyOrReturnValue(CallDelegatesForAttributeChange([&value](auto & delegate) { return delegate.OnOffWaitTimeChanged(value); }), false);
+    SetAttributeValue(mOffWaitTime, value, Attributes::OffWaitTime::Id);
     UpdateTimer();
-    CallDelegatesForAttributeChange([this](auto & delegate) { delegate.OnOffWaitTimeChanged(mOffWaitTime); });
+    return true;
 }
 
-CHIP_ERROR OnOffLightingCluster::SetStartupOnOff(DataModel::Nullable<OnOff::StartUpOnOffEnum> value)
+DataModel::ActionReturnStatus OnOffLightingCluster::SetStartupOnOff(DataModel::Nullable<OnOff::StartUpOnOffEnum> value)
 {
-    VerifyOrReturnValue(SetAttributeValue(mStartUpOnOff, value, Attributes::StartUpOnOff::Id), CHIP_NO_ERROR);
+    VerifyOrReturnError(value.IsNull() || value.Value() != OnOff::StartUpOnOffEnum::kUnknownEnumValue,
+                        Status::ConstraintError);
+    VerifyOrReturnValue(mStartUpOnOff != value, DataModel::ActionReturnStatus::FixedStatus::kWriteSuccessNoOp);
+    VerifyOrReturnValue(CallDelegatesForAttributeChange([&value](auto & delegate) { return delegate.OnStartUpOnOffChanged(value); }), Status::Failure);
+    SetAttributeValue(mStartUpOnOff, value, Attributes::StartUpOnOff::Id);
 
     if (mContext != nullptr)
     {
@@ -252,9 +253,7 @@ CHIP_ERROR OnOffLightingCluster::SetStartupOnOff(DataModel::Nullable<OnOff::Star
             mContext->attributeStorage.WriteValue({ mPath.mEndpointId, OnOff::Id, Attributes::StartUpOnOff::Id },
                                                   { reinterpret_cast<const uint8_t *>(&storageValue), sizeof(storageValue) }));
     }
-
-    CallDelegatesForAttributeChange([this](auto & delegate) { delegate.OnStartUpOnOffChanged(mStartUpOnOff); });
-    return CHIP_NO_ERROR;
+    return Status::Success;
 }
 
 CHIP_ERROR OnOffLightingCluster::SetOnOffWithTimeReset(bool on)
@@ -268,9 +267,7 @@ CHIP_ERROR OnOffLightingCluster::SetOnOffWithTimeReset(bool on)
     // Note that here we only update things if mOnTime is not already 0
     if (!on && (mOnTime != 0))
     {
-        mOnTime = 0;
-        UpdateTimer();
-        NotifyAttributeChanged(Attributes::OnTime::Id);
+        VerifyOrReturnError(SetOnTime(0), CHIP_ERROR_INCORRECT_STATE);
     }
 
     // Spec: On receipt of a level control cluster command that:
@@ -281,9 +278,7 @@ CHIP_ERROR OnOffLightingCluster::SetOnOffWithTimeReset(bool on)
     // Note that here we only update things if mOffWaitTime is not already 0
     if (on && (mOnTime == 0) && (mOffWaitTime != 0))
     {
-        mOffWaitTime = 0;
-        UpdateTimer();
-        NotifyAttributeChanged(Attributes::OffWaitTime::Id);
+        VerifyOrReturnError(SetOffWaitTime(0), CHIP_ERROR_INCORRECT_STATE);
     }
 
     return CHIP_NO_ERROR;
@@ -351,7 +346,7 @@ DataModel::ActionReturnStatus OnOffLightingCluster::HandleOff()
         LogErrorOnFailure(mScenesIntegrationDelegate->MakeSceneInvalidForAllFabrics());
     }
 
-    SetAttributeValue<uint16_t>(mOnTime, 0, Attributes::OnTime::Id);
+    VerifyOrReturnValue(SetOnTime(0), Status::Failure);
     UpdateTimer();
     return Status::Success;
 }
@@ -373,7 +368,7 @@ DataModel::ActionReturnStatus OnOffLightingCluster::HandleOn()
 
     if (mOnTime == 0)
     {
-        SetAttributeValue<uint16_t>(mOffWaitTime, 0, Attributes::OffWaitTime::Id);
+        VerifyOrReturnValue(SetOffWaitTime(0), Status::Failure);
     }
     UpdateTimer();
     return Status::Success;
@@ -493,16 +488,16 @@ DataModel::ActionReturnStatus OnOffLightingCluster::HandleOnWithTimedOff(chip::T
         if (mOnTime > 0)
         {
             // TIMED_ON state, stay here
-            SetOnTime(std::max(mOnTime, static_cast<uint16_t>(commandData.onTime)));
+            VerifyOrReturnError(SetOnTime(std::max(mOnTime, static_cast<uint16_t>(commandData.onTime))), Status::Failure);
         }
         else
         {
             // ON -> TIMED_ON transition
-            SetOnTime(commandData.onTime);
+            VerifyOrReturnError(SetOnTime(commandData.onTime), Status::Failure);
         }
 
         // in both cases, OffWaitTime stays to the user input value
-        SetOffWaitTime(commandData.offWaitTime);
+        VerifyOrReturnError(SetOffWaitTime(commandData.offWaitTime), Status::Failure);
     }
     else
     {
@@ -510,13 +505,13 @@ DataModel::ActionReturnStatus OnOffLightingCluster::HandleOnWithTimedOff(chip::T
         if (mOffWaitTime > 0)
         {
             // TIMED_OFF already, we IGNORE the OnTime (according to spec diagram)
-            SetOffWaitTime(std::min(mOffWaitTime, commandData.offWaitTime));
+            VerifyOrReturnError(SetOffWaitTime(std::min(mOffWaitTime, commandData.offWaitTime)), Status::Failure);
         }
         else
         {
             // OFF -> TIMED_ON transition, keep user values
-            SetOnTime(commandData.onTime);
-            SetOffWaitTime(commandData.offWaitTime);
+            VerifyOrReturnError(SetOnTime(commandData.onTime), Status::Failure);
+            VerifyOrReturnError(SetOffWaitTime(commandData.offWaitTime), Status::Failure);
         }
     }
 
@@ -534,12 +529,12 @@ CHIP_ERROR OnOffLightingCluster::SetOnOffFromCommand(bool on)
     if (on)
     {
         // device turned on. we stop waiting for on again
-        SetOffWaitTime(0);
+        VerifyOrReturnValue(SetOffWaitTime(0), CHIP_NO_ERROR);
     }
     else
     {
         // device turned off. Stop waiting to turn off after a timer
-        SetOnTime(0);
+        VerifyOrReturnValue(SetOnTime(0), CHIP_NO_ERROR);
     }
 
     return SetOnOff(on);

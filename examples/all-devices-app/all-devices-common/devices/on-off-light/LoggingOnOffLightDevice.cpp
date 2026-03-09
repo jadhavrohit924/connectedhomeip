@@ -205,9 +205,10 @@ void LoggingOnOffLightDevice::OnOffDelegate::OnOffStartup(bool on)
     ChipLogProgress(DeviceLayer, "LoggingOnOffLightDevice::OnOffDelegate::OnOffStartup() -> %s", on ? "ON" : "OFF");
 }
 
-void LoggingOnOffLightDevice::OnOffDelegate::OnOnOffChanged(bool on)
+bool LoggingOnOffLightDevice::OnOffDelegate::OnOnOffChanged(bool on)
 {
     ChipLogProgress(DeviceLayer, "LoggingOnOffLightDevice::OnOffDelegate::OnOffChanged() -> %s", on ? "ON" : "OFF");
+    return true;
 }
 
 } // namespace chip::app

@@ -120,6 +120,7 @@ DataModel::ActionReturnStatus IdentifyCluster::SetIdentifyTime(IdentifyTimeChang
 
     if (mIdentifyDelegate)
     {
+        VerifyOrReturnError(mIdentifyDelegate->OnIdentifyTimeChanged(mIdentifyTime), Protocols::InteractionModel::Status::Failure);
         if (previousIdentifyTime == 0 && mIdentifyTime > 0)
         {
             mIdentifyDelegate->OnIdentifyStart(*this);
@@ -128,7 +129,6 @@ DataModel::ActionReturnStatus IdentifyCluster::SetIdentifyTime(IdentifyTimeChang
         {
             mIdentifyDelegate->OnIdentifyStop(*this);
         }
-        mIdentifyDelegate->OnIdentifyTimeChanged(mIdentifyTime);
     }
 
     if (mIdentifyTime > 0)

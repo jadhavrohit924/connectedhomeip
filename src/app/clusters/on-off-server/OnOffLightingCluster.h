@@ -72,13 +72,13 @@ public:
     ~OnOffLightingCluster() override;
 
     uint16_t GetOnTime() const { return mOnTime; }
-    void SetOnTime(uint16_t value);
+    bool SetOnTime(uint16_t value);
 
     uint16_t GetOffWaitTime() const { return mOffWaitTime; }
-    void SetOffWaitTime(uint16_t value);
+    bool SetOffWaitTime(uint16_t value);
 
     DataModel::Nullable<OnOff::StartUpOnOffEnum> GetStartupOnOff() const { return mStartUpOnOff; }
-    CHIP_ERROR SetStartupOnOff(DataModel::Nullable<OnOff::StartUpOnOffEnum> value);
+    DataModel::ActionReturnStatus SetStartupOnOff(DataModel::Nullable<OnOff::StartUpOnOffEnum> value);
 
     // ServerClusterInterface implementation
     CHIP_ERROR Startup(ServerClusterContext & context) override;
@@ -138,15 +138,18 @@ private:
     void UpdateTimer();
 
     /// Helper method to call delegate callbacks after attribute updates.
+    /// @return True if all delegate callbacks returned true, false otherwise.
     /// @tparam CallbackType The type of the callback function/lambda
     /// @param callback A callable that takes the delegate reference and calls the appropriate callback method
     template <typename CallbackType>
-    void CallDelegatesForAttributeChange(CallbackType && callback)
+    bool CallDelegatesForAttributeChange(CallbackType && callback)
     {
+        bool success = true;
         for (auto & delegate : mDelegates)
         {
-            std::forward<CallbackType>(callback)(delegate);
+            success &= std::forward<CallbackType>(callback)(delegate);
         }
+        return success;
     }
 
     // Command Handlers

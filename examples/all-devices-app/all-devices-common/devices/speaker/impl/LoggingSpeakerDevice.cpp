@@ -73,9 +73,10 @@ void LoggingSpeakerDevice::OnOffStartup(bool on)
     ChipLogProgress(AppServer, "LoggingSpeakerDevice: OnOffStartup() - Speaker %s", on ? "Unmuted" : "Muted");
 }
 
-void LoggingSpeakerDevice::OnOnOffChanged(bool on)
+bool LoggingSpeakerDevice::OnOnOffChanged(bool on)
 {
     ChipLogProgress(AppServer, "LoggingSpeakerDevice: OnOnOffChanged() - Speaker %s", on ? "Unmuted" : "Muted");
+    return true;
 }
 
 } // namespace app

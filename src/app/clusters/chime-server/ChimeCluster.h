@@ -24,8 +24,6 @@
 #include <clusters/Chime/Commands.h>
 #include <clusters/Chime/Structs.h>
 
-#include <utility>
-
 namespace chip {
 namespace app {
 namespace Clusters {
@@ -117,16 +115,6 @@ private:
                                                        const Chime::Commands::PlayChimeSound::DecodableType & commandData);
 
     void GenerateChimeStartedPlayingEvent(const uint8_t chimeID);
-
-    /// Helper method to notify attribute change and call delegate callback
-    /// @tparam CallbackType The type of the callback function/lambda
-    /// @param attributeId The attribute ID that changed
-    /// @param callback A callable that takes the delegate reference and calls the appropriate callback method
-    template <typename CallbackType>
-    void CallDelegatesForAttributeChange(CallbackType && callback)
-    {
-        std::forward<CallbackType>(callback)(mDelegate);
-    }
 };
 
 /** @brief
@@ -177,10 +165,11 @@ public:
     virtual Protocols::InteractionModel::Status PlayChimeSound(uint8_t chimeID) = 0;
 
     // These methods are called when specific attributes are updated via WriteAttribute.
-    // Default implementations are empty - override only the callbacks you need.
+    // Default implementations return true - override only the callbacks you need.
+    // Return false to abort the write operation.
 
-    virtual void OnSelectedChimeChanged(uint8_t selectedChime) {}
-    virtual void OnEnabledChanged(bool enabled) {}
+    virtual bool OnSelectedChimeChanged(uint8_t selectedChime) { return true; }
+    virtual bool OnEnabledChanged(bool enabled) { return true; }
 
 protected:
     friend class ChimeCluster;

@@ -132,6 +132,10 @@ CHIP_ERROR OnOffCluster::SetOnOff(bool on)
 
     VerifyOrReturnError(mOnOff != on, CHIP_NO_ERROR);
 
+    for (auto & delegate : mDelegates)
+    {
+        VerifyOrReturnValue(delegate.OnOnOffChanged(on), CHIP_ERROR_INCORRECT_STATE);
+    }
     mOnOff = on;
     NotifyAttributeChanged(Attributes::OnOff::Id);
 
@@ -139,11 +143,6 @@ CHIP_ERROR OnOffCluster::SetOnOff(bool on)
     LogErrorOnFailure(
         mContext->attributeStorage.WriteValue(ConcreteAttributePath(mPath.mEndpointId, Clusters::OnOff::Id, Attributes::OnOff::Id),
                                               ByteSpan(reinterpret_cast<const uint8_t *>(&mOnOff), sizeof(mOnOff))));
-
-    for (auto & delegate : mDelegates)
-    {
-        delegate.OnOnOffChanged(mOnOff);
-    }
 
     return CHIP_NO_ERROR;
 }

@@ -51,7 +51,7 @@ private:
     class OnOffDelegate : public Clusters::OnOffDelegate
     {
         void OnOffStartup(bool on) override;
-        void OnOnOffChanged(bool on) override;
+        bool OnOnOffChanged(bool on) override;
     };
 
     class DefaultScenesManagementTableProvider : public Clusters::ScenesManagementTableProvider

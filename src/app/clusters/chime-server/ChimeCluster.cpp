@@ -227,24 +227,24 @@ Status ChimeCluster::SetSelectedChime(uint8_t chimeID)
     {
         return Protocols::InteractionModel::Status::NotFound;
     }
+    VerifyOrReturnError(mContext.delegate.OnSelectedChimeChanged(chimeID), Status::Failure);
     if (SetAttributeValue(mSelectedChime, chimeID, Attributes::SelectedChime::Id))
     {
         // TODO: Migrate to use context.attributeStorage
         TEMPORARY_RETURN_IGNORED mContext.safeAttributePersistenceProvider.WriteScalarValue(
             { mPath.mEndpointId, Chime::Id, Attributes::SelectedChime::Id }, mSelectedChime);
-        CallDelegatesForAttributeChange([this](auto & delegate) { delegate.OnSelectedChimeChanged(mSelectedChime); });
     }
     return Protocols::InteractionModel::Status::Success;
 }
 
 Status ChimeCluster::SetEnabled(bool enabled)
 {
+    VerifyOrReturnError(mContext.delegate.OnEnabledChanged(enabled), Status::Failure);
     if (SetAttributeValue(mEnabled, enabled, Attributes::Enabled::Id))
     {
         // TODO: Migrate to use context.attributeStorage
         TEMPORARY_RETURN_IGNORED mContext.safeAttributePersistenceProvider.WriteScalarValue(
             { mPath.mEndpointId, Chime::Id, Attributes::Enabled::Id }, mEnabled);
-        CallDelegatesForAttributeChange([this](auto & delegate) { delegate.OnEnabledChanged(mEnabled); });
     }
     return Protocols::InteractionModel::Status::Success;
 }

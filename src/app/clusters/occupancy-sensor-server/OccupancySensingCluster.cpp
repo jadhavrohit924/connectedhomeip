@@ -210,6 +210,10 @@ DataModel::ActionReturnStatus OccupancySensingCluster::SetHoldTime(uint16_t hold
         return DataModel::ActionReturnStatus::FixedStatus::kWriteSuccessNoOp;
     }
 
+    if (mDelegate)
+    {
+        VerifyOrReturnError(mDelegate->OnHoldTimeChanged(holdTime), Protocols::InteractionModel::Status::Failure);
+    }
     mHoldTime = holdTime;
     NotifyAttributeChanged(Attributes::HoldTime::Id);
 
@@ -237,11 +241,6 @@ DataModel::ActionReturnStatus OccupancySensingCluster::SetHoldTime(uint16_t hold
             // providing a working timer delegate, so we ignore the return value here.
             RETURN_SAFELY_IGNORED mHoldTimeDelegate->StartTimer(this, remainingTime);
         }
-    }
-
-    if (mDelegate)
-    {
-        mDelegate->OnHoldTimeChanged(holdTime);
     }
 
     if (mContext != nullptr)
@@ -286,13 +285,12 @@ void OccupancySensingCluster::TimerFired()
 void OccupancySensingCluster::DoSetOccupancy(bool occupied)
 {
     VerifyOrReturn(mOccupancy.Has(OccupancySensing::OccupancyBitmap::kOccupied) != occupied);
-    mOccupancy.Set(OccupancySensing::OccupancyBitmap::kOccupied, occupied);
-    NotifyAttributeChanged(Attributes::Occupancy::Id);
-
     if (mDelegate)
     {
-        mDelegate->OnOccupancyChanged(occupied);
+        TEMPORARY_RETURN_IGNORED mDelegate->OnOccupancyChanged(occupied);
     }
+    mOccupancy.Set(OccupancySensing::OccupancyBitmap::kOccupied, occupied);
+    NotifyAttributeChanged(Attributes::Occupancy::Id);
 
     if (mContext != nullptr)
     {

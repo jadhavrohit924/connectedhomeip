@@ -55,7 +55,7 @@ public:
      */
     virtual bool IsTriggerEffectEnabled() const = 0;
 
-    virtual void OnIdentifyTimeChanged(uint16_t identifyTime) {}
+    virtual bool OnIdentifyTimeChanged(uint16_t identifyTime) { return true; }
 };
 
 class IdentifyCluster : public DefaultServerCluster, public TimerContext, public IdentifyIntegrationDelegate

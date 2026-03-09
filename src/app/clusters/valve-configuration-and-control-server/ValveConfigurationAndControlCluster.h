@@ -97,15 +97,7 @@ private:
     void SetCurrentState(const ValveConfigurationAndControl::ValveStateEnum & newState);
     CHIP_ERROR SetAutoCloseTime(DataModel::Nullable<uint32_t> openDuration);
     void EmitValveChangeEvent(ValveConfigurationAndControl::ValveStateEnum newState);
-
-    template <typename CallbackType>
-    void CallDelegatesForAttributeChange(CallbackType && callback)
-    {
-        if (mDelegate != nullptr)
-        {
-            std::forward<CallbackType>(callback)(*mDelegate);
-        }
-    }
+    
     // Attributes
     const BitFlags<ValveConfigurationAndControl::Feature> mFeatures;
     const OptionalAttributeSet mOptionalAttributeSet;

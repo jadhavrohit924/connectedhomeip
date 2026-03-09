@@ -53,8 +53,16 @@ bool onHoldTimeChangedCalled  = false;
 class TestOccupancySensingDelegate : public OccupancySensingDelegate
 {
 public:
-    void OnOccupancyChanged(bool occupied) override { onOccupancyChangedCalled = true; }
-    void OnHoldTimeChanged(uint16_t holdTime) override { onHoldTimeChangedCalled = true; }
+    bool OnOccupancyChanged(bool occupied) override
+    {
+        onOccupancyChangedCalled = true;
+        return true;
+    }
+    bool OnHoldTimeChanged(uint16_t holdTime) override
+    {
+        onHoldTimeChangedCalled = true;
+        return true;
+    }
 };
 
 TestOccupancySensingDelegate gTestOccupancySensingDelegate;

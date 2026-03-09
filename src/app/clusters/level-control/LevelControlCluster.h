@@ -163,7 +163,7 @@ public:
 
     // OnOffDelegate Implementation
     void OnOffStartup(bool on) override;
-    void OnOnOffChanged(bool on) override;
+    bool OnOnOffChanged(bool on) override;
 
     // Cluster Public API
     void SetOptions(BitMask<LevelControl::OptionsBitmap> newOptions);

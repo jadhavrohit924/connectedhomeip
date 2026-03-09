@@ -45,10 +45,11 @@ public:
     bool mCalled        = false;
     bool mStartupCalled = false;
 
-    void OnOnOffChanged(bool on) override
+    bool OnOnOffChanged(bool on) override
     {
         mOnOff  = on;
         mCalled = true;
+        return true;
     }
 
     void OnOffStartup(bool on) override

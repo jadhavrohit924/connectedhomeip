@@ -47,7 +47,7 @@ public:
 
     // OnOffDelegate
     void OnOffStartup(bool on) override;
-    void OnOnOffChanged(bool on) override;
+    bool OnOnOffChanged(bool on) override;
 };
 
 } // namespace app
