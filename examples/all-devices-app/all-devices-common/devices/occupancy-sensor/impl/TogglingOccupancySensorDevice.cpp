@@ -64,14 +64,16 @@ void TogglingOccupancySensorDevice::Unregister(CodeDrivenDataModelProvider & pro
     OccupancySensorDevice::Unregister(provider);
 }
 
-void TogglingOccupancySensorDevice::OnOccupancyChanged(bool occupied)
+bool TogglingOccupancySensorDevice::OnOccupancyChanged(bool occupied)
 {
     ChipLogProgress(AppServer, "TogglingOccupancySensorDevice::OnOccupancyChanged: %s", occupied ? "Occupied" : "Unoccupied");
+    return true;
 }
 
-void TogglingOccupancySensorDevice::OnHoldTimeChanged(uint16_t holdTime)
+bool TogglingOccupancySensorDevice::OnHoldTimeChanged(uint16_t holdTime)
 {
     ChipLogProgress(AppServer, "TogglingOccupancySensorDevice::OnHoldTimeChanged: %u", holdTime);
+    return true;
 }
 
 void TogglingOccupancySensorDevice::TimerFired()

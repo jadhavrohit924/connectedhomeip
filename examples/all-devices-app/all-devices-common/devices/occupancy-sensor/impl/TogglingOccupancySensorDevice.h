@@ -42,8 +42,8 @@ public:
     void Unregister(CodeDrivenDataModelProvider & provider) override;
 
     // OccupancySensingDelegate
-    void OnOccupancyChanged(bool occupied) override;
-    void OnHoldTimeChanged(uint16_t holdTime) override;
+    bool OnOccupancyChanged(bool occupied) override;
+    bool OnHoldTimeChanged(uint16_t holdTime) override;
 
     // TimerContext
     void TimerFired() override;
