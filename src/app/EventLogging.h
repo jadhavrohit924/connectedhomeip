@@ -21,6 +21,7 @@
 #include <app/ConcreteEventPath.h>
 #include <app/EventLoggingDelegate.h>
 #include <app/EventManagement.h>
+#include <app/MessageDef/EventDataIB.h>
 #include <app/data-model/Encode.h>
 #include <app/data-model/FabricScoped.h>
 #include <app/data-model/List.h> // So we can encode lists
@@ -83,6 +84,74 @@ CHIP_ERROR LogEvent(const T & aEventData, EndpointId aEndpoint, EventNumber & aE
     }
 
     return EventManagement::GetInstance().LogEvent(&eventData, eventOptions, aEventNumber);
+}
+
+/**
+ * @brief
+ *   An EventLoggingDelegate that writes pre-encoded TLV event data into the event log.
+ *
+ * This is useful when the event data is already available as a TLV-encoded blob,
+ * for example when bridging events from another device or replaying stored events.
+ *
+ * The pre-encoded TLV must be a TLV structure with context-tagged fields inside,
+ * matching the schema for the target ClusterId/EventId. It must NOT include the
+ * outer EventDataIB::Tag::kData tag -- that is applied during the copy.
+ */
+class RawTLVEventLogger : public EventLoggingDelegate
+{
+public:
+    RawTLVEventLogger(const uint8_t * aEventTLV, size_t aEventTLVLen) : mEventTLV(aEventTLV), mEventTLVLen(aEventTLVLen) {}
+
+    CHIP_ERROR WriteEvent(chip::TLV::TLVWriter & aWriter) final override
+    {
+        chip::TLV::TLVReader reader;
+        reader.Init(mEventTLV, mEventTLVLen);
+        ReturnErrorOnFailure(reader.Next());
+        return aWriter.CopyElement(TLV::ContextTag(to_underlying(EventDataIB::Tag::kData)), reader);
+    }
+
+private:
+    const uint8_t * mEventTLV;
+    size_t mEventTLVLen;
+};
+
+/**
+ * @brief
+ *   Log an event from pre-encoded TLV event data.
+ *
+ * This overload accepts raw TLV bytes representing the event data payload
+ * (a TLV structure with context-tagged fields), along with the event path
+ * and priority. The TLV is copied directly into the event log without
+ * re-encoding individual fields.
+ *
+ * Typical use cases include bridging events from external devices or
+ * replaying previously serialized events.
+ *
+ * The caller must hold the Matter stack lock or schedule this call on
+ * the Matter event loop.
+ *
+ * @param[in]  aEventPath    The concrete event path (endpoint, cluster, event).
+ * @param[in]  aPriority     The priority level for the event.
+ * @param[in]  aEventTLV     Pointer to the pre-encoded TLV event data structure.
+ * @param[in]  aEventTLVLen  Length of the pre-encoded TLV data in bytes.
+ * @param[out] aEventNumber  The assigned event number if logging succeeded, 0 otherwise.
+ * @param[in]  aFabricIndex  Optional fabric index for fabric-scoped events.
+ *                           Defaults to kUndefinedFabricIndex (not fabric-scoped).
+ *
+ * @return CHIP_ERROR  CHIP_NO_ERROR on success, or an appropriate error code.
+ */
+inline CHIP_ERROR LogEvent(const ConcreteEventPath & aEventPath, PriorityLevel aPriority, const uint8_t * aEventTLV,
+                           size_t aEventTLVLen, EventNumber & aEventNumber,
+                           FabricIndex aFabricIndex = kUndefinedFabricIndex)
+{
+    RawTLVEventLogger eventLogger(aEventTLV, aEventTLVLen);
+
+    EventOptions eventOptions;
+    eventOptions.mPath        = aEventPath;
+    eventOptions.mPriority    = aPriority;
+    eventOptions.mFabricIndex = aFabricIndex;
+
+    return EventManagement::GetInstance().LogEvent(&eventLogger, eventOptions, aEventNumber);
 }
 
 } // namespace app

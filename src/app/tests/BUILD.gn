@@ -372,6 +372,9 @@ chip_test_suite("tests") {
   # so TestEventLogging.cpp would be testing the same thing as TestEventLoggingNoUTCTime,
   # but it's not set up to deal with the timestamps being that low.
   if (chip_device_platform != "nrfconnect") {
-    test_sources += [ "TestEventLogging.cpp" ]
+    test_sources += [
+      "TestEventLogging.cpp",
+      "TestRawTLVEventLogging.cpp",
+    ]
   }
 }
